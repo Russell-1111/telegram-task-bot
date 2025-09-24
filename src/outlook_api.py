@@ -210,6 +210,65 @@ def get_all_tasks(access_token):
         logger.error(f"Error retrieving tasks: {e}")
         raise
 
+def get_uncompleted_tasks(access_token, max_tasks=10):
+    """
+    Retrieve uncompleted tasks from the default Outlook task list
+    
+    Args:
+        access_token (str): Microsoft Graph API access token
+        max_tasks (int): Maximum number of tasks to return (default: 10)
+    
+    Returns:
+        list: List of uncompleted task dictionaries with task info
+    """
+    logger.info(f"Attempting to retrieve up to {max_tasks} uncompleted tasks from the default list.")
+    graph_api_url = "https://graph.microsoft.com/v1.0"
+    
+    headers = {
+        "Authorization": "Bearer " + access_token,
+        "Content-Type": "application/json"
+    }
+
+    try:
+        # First, get the ID of the default "Tasks" todo list
+        get_lists_response = make_request_with_retry("GET", f"{graph_api_url}/me/todo/lists", headers)
+        todo_lists_data = get_lists_response
+
+        default_task_list_id = None
+        for todo_list in todo_lists_data["value"]:
+            if todo_list.get("wellknownListName") == "defaultList" or \
+            todo_list["displayName"].lower() == "tasks":
+                default_task_list_id = todo_list["id"]
+                break
+                
+        if not default_task_list_id:
+            if todo_lists_data["value"]:
+                default_task_list_id = todo_lists_data["value"][0]["id"]
+                logger.warning("Could not find default To Do list, using the first available list for fetching uncompleted tasks.")
+            else:
+                raise Exception("No To Do lists found in your Outlook account to retrieve tasks from.")
+
+        # Fetch tasks from the identified list with filter for uncompleted tasks
+        # Use $filter parameter to get only non-completed tasks
+        tasks_endpoint = f"{graph_api_url}/me/todo/lists/{default_task_list_id}/tasks"
+        filter_param = "$filter=status ne 'completed'"
+        top_param = f"$top={max_tasks}"
+        orderby_param = "$orderby=dueDateTime/dateTime asc"  # Order by due date, with null values last
+        
+        # Combine parameters
+        full_endpoint = f"{tasks_endpoint}?{filter_param}&{top_param}&{orderby_param}"
+        
+        tasks_response = make_request_with_retry("GET", full_endpoint, headers)
+        
+        uncompleted_tasks = tasks_response["value"]
+        logger.info(f"Successfully retrieved {len(uncompleted_tasks)} uncompleted tasks.")
+        
+        return uncompleted_tasks
+
+    except Exception as e:
+        logger.error(f"Error retrieving uncompleted tasks: {e}")
+        raise
+
 def update_task_due_date(access_token, task_id, new_due_date_iso):
     """Update the due date of an existing task"""
     logger.info(f"Attempting to update task {task_id} with new due date: {new_due_date_iso}")

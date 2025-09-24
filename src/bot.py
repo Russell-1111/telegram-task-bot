@@ -226,15 +226,172 @@ def format_due_date_for_outlook(date_string):
         malaysia_now = datetime.now(MALAYSIA_TZ).replace(hour=17, minute=0, second=0, microsecond=0)
         return malaysia_now.strftime("%Y-%m-%dT%H:%M:%S.0000000")
 
+def format_task_for_display(task, index):
+    """
+    Format a single task for Telegram display with proper markdown and emojis.
+    
+    Args:
+        task (dict): Task object from Microsoft Graph API
+        index (int): Task number for display (1-based)
+    
+    Returns:
+        str: Formatted task string with emojis and markdown
+    """
+    try:
+        # Get task title
+        title = task.get('title', 'Untitled Task')
+        
+        # Format due date if available
+        due_date_str = ""
+        if task.get('dueDateTime') and task['dueDateTime'].get('dateTime'):
+            try:
+                # Parse the due date from ISO format
+                due_datetime_utc = datetime.fromisoformat(task['dueDateTime']['dateTime'].replace('Z', '+00:00'))
+                # Convert to Malaysia timezone
+                due_datetime_malaysia = due_datetime_utc.astimezone(MALAYSIA_TZ)
+                
+                # Check if it's today, tomorrow, or overdue
+                today = datetime.now(MALAYSIA_TZ).date()
+                due_date = due_datetime_malaysia.date()
+                
+                if due_date < today:
+                    due_date_str = f" - 🔴 **Overdue** ({due_datetime_malaysia.strftime('%b %d')})"
+                elif due_date == today:
+                    due_date_str = f" - 📅 **Due Today**"
+                elif (due_date - today).days == 1:
+                    due_date_str = f" - 📅 **Due Tomorrow**"
+                else:
+                    due_date_str = f" - 📅 Due {due_datetime_malaysia.strftime('%b %d')}"
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Error parsing due date for task '{title}': {e}")
+                due_date_str = ""
+        
+        # Format importance/priority
+        priority_str = ""
+        if task.get('importance') == 'high':
+            priority_str = " ⚡ **High Priority**"
+        elif task.get('importance') == 'normal':
+            # Don't show normal priority to avoid clutter
+            pass
+        elif task.get('importance') == 'low':
+            priority_str = " 🔽 Low Priority"
+        
+        # Format the complete task line
+        formatted_task = f"{index}. **{title}**{due_date_str}{priority_str}"
+        
+        return formatted_task
+        
+    except Exception as e:
+        logger.error(f"Error formatting task for display: {e}")
+        return f"{index}. {task.get('title', 'Untitled Task')}"
+
+def format_tasks_list(tasks):
+    """
+    Format a list of tasks for Telegram display.
+    
+    Args:
+        tasks (list): List of task objects from Microsoft Graph API
+    
+    Returns:
+        str: Formatted task list with header and individual tasks
+    """
+    if not tasks:
+        return "📋 **Your Tasks**\n\n🎉 **Congratulations!** You have no pending tasks! Time to relax or add some new goals! 🌟"
+    
+    task_count = len(tasks)
+    header = f"📋 **Your Current Tasks** ({task_count} remaining)\n\n"
+    
+    # Format each task
+    formatted_tasks = []
+    for i, task in enumerate(tasks, 1):
+        formatted_task = format_task_for_display(task, i)
+        formatted_tasks.append(formatted_task)
+    
+    # Join all tasks
+    tasks_text = "\n".join(formatted_tasks)
+    
+    return header + tasks_text
+
+def get_motivational_message(task_count, overdue_count=0):
+    """
+    Generate a motivational message based on task count and status.
+    
+    Args:
+        task_count (int): Total number of uncompleted tasks
+        overdue_count (int): Number of overdue tasks (optional)
+    
+    Returns:
+        str: Motivational message with emojis
+    """
+    import random
+    
+    if task_count == 0:
+        celebration_messages = [
+            "🎉 **Amazing!** You've completed all your tasks! Time to celebrate! 🌟",
+            "🏆 **Inbox Zero achieved!** You're absolutely crushing it! 💪",
+            "✨ **Perfect!** No pending tasks - you're on fire! 🔥",
+            "🎯 **Goal accomplished!** All tasks done - take a well-deserved break! 🏖️",
+            "🌟 **Outstanding!** Your task list is clear - keep up the excellent work! 🚀"
+        ]
+        return random.choice(celebration_messages)
+    
+    elif task_count <= 3:
+        low_count_messages = [
+            f"💪 **Almost there!** Just {task_count} tasks to go - you've got this! 🚀",
+            f"🌟 **So close!** Only {task_count} tasks left - finish strong! 💥",
+            f"🎯 **Nearly done!** {task_count} tasks remaining - you're doing great! ⭐",
+            f"🔥 **On fire!** Just {task_count} more tasks and you're all set! 🏆",
+            f"⚡ **Power through!** Only {task_count} tasks left - victory is near! 🌈"
+        ]
+        message = random.choice(low_count_messages)
+    
+    elif task_count <= 7:
+        medium_count_messages = [
+            f"💪 **You're doing great!** {task_count} tasks to tackle - one step at a time! 🌟",
+            f"🚀 **Keep going!** {task_count} tasks remaining - you're making progress! 📈",
+            f"⭐ **Stay strong!** {task_count} tasks on your list - you can handle this! 💫",
+            f"🎯 **Focus time!** {task_count} tasks to complete - break them down and conquer! ⚡",
+            f"🌟 **You've got this!** {task_count} tasks ahead - tackle them with confidence! 💪"
+        ]
+        message = random.choice(medium_count_messages)
+    
+    else:  # task_count > 7
+        high_count_messages = [
+            f"🎯 **Big list, bigger determination!** {task_count} tasks - start with the most important! 💪",
+            f"🚀 **Challenge accepted!** {task_count} tasks to organize - you're capable of amazing things! ⭐",
+            f"💫 **Take it step by step!** {task_count} tasks - prioritize and make progress! 🌟",
+            f"⚡ **You're a productivity hero!** {task_count} tasks - break them into smaller wins! 🏆",
+            f"🌈 **Every journey starts with one step!** {task_count} tasks - pick one and begin! 🔥"
+        ]
+        message = random.choice(high_count_messages)
+    
+    # Add overdue task warning if applicable
+    if overdue_count > 0:
+        overdue_warning = f"\n🔴 **Heads up:** {overdue_count} task{'s' if overdue_count > 1 else ''} overdue - consider tackling {'them' if overdue_count > 1 else 'it'} first!"
+        message += overdue_warning
+    
+    return message
+
 # 3. Define handler functions for different types of messages
 
 # This function is called when the user sends the /start command
 async def start(update: Update, _context):
     """Sends a welcoming message when the command /start is issued."""
     user = update.effective_user
-    await update.message.reply_html(
-        f"Hi {user.mention_html()}! Send me any text, and I'll echo it back."
-    )
+    welcome_message = f"""Hi {user.mention_html()}! 🤖
+
+I'm your personal task management assistant! Here's what I can do:
+
+📝 **Create Tasks**: Send me any message describing a task, and I'll create it in your Outlook Tasks
+📅 **Set Due Dates**: Include dates like "tomorrow", "next Friday", or "2024-12-25" in your message
+📋 **View Tasks**: Use /mytasks to see your current uncompleted tasks with motivational messages
+🔗 **Connect Outlook**: Use /connectoutlook to link your Microsoft account
+
+🇲🇾 All dates and times are handled in Malaysia timezone (UTC+8).
+
+Try sending me a task or use /mytasks to get started!"""
+    
+    await update.message.reply_html(welcome_message)
     logger.info(f"User {user.first_name} ({user.id}) started the bot.")
 
 # This function is called when the user sends any text message
@@ -480,6 +637,87 @@ async def connect_outlook(update: Update, context):
         await update.message.reply_text(f"Failed to connect to Outlook: {e}")
         logger.error(f"Error in connect_outlook: {e}")
 
+# Rate limiting dictionary to track last /mytasks usage per user
+user_last_mytasks_request = {}
+
+async def my_tasks(update: Update, context):
+    """
+    Handle /mytasks command to display user's uncompleted Outlook tasks with motivational messages.
+    Implements rate limiting to prevent API abuse (max 1 request per minute per user).
+    """
+    global outlook_access_token
+    user_id = update.effective_user.id
+    user_name = update.effective_user.first_name
+    
+    logger.info(f"User {user_name} ({user_id}) requested /mytasks")
+    
+    # Check if user is authenticated
+    if not outlook_access_token:
+        await update.message.reply_text(
+            "🔗 **Please connect to Outlook first!**\n"
+            "Use the /connectoutlook command to authenticate your account."
+        )
+        logger.warning(f"User {user_id} tried to use /mytasks without authentication")
+        return
+    
+    # Rate limiting: Check if user has made a request in the last minute
+    current_time = datetime.now(MALAYSIA_TZ)
+    if user_id in user_last_mytasks_request:
+        time_since_last_request = current_time - user_last_mytasks_request[user_id]
+        if time_since_last_request.total_seconds() < 60:  # 60 seconds = 1 minute
+            remaining_seconds = 60 - int(time_since_last_request.total_seconds())
+            await update.message.reply_text(
+                f"⏱️ **Please wait {remaining_seconds} seconds** before requesting tasks again.\n"
+                "This helps prevent overwhelming the server! 😊"
+            )
+            logger.info(f"Rate limited user {user_id}, {remaining_seconds} seconds remaining")
+            return
+    
+    # Update last request time
+    user_last_mytasks_request[user_id] = current_time
+    
+    try:
+        # Show "typing" indicator while fetching tasks
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+        
+        # Fetch uncompleted tasks from Outlook
+        logger.info(f"Fetching uncompleted tasks for user {user_id}")
+        uncompleted_tasks = outlook_api.get_uncompleted_tasks(outlook_access_token, max_tasks=10)
+        
+        # Count overdue tasks
+        overdue_count = 0
+        today = datetime.now(MALAYSIA_TZ).date()
+        
+        for task in uncompleted_tasks:
+            if task.get('dueDateTime') and task['dueDateTime'].get('dateTime'):
+                try:
+                    due_datetime_utc = datetime.fromisoformat(task['dueDateTime']['dateTime'].replace('Z', '+00:00'))
+                    due_date = due_datetime_utc.astimezone(MALAYSIA_TZ).date()
+                    if due_date < today:
+                        overdue_count += 1
+                except (ValueError, TypeError):
+                    continue
+        
+        # Format tasks for display
+        tasks_display = format_tasks_list(uncompleted_tasks)
+        
+        # Get motivational message
+        motivational_message = get_motivational_message(len(uncompleted_tasks), overdue_count)
+        
+        # Combine tasks display and motivational message
+        full_message = f"{tasks_display}\n\n{motivational_message}"
+        
+        # Send the formatted message
+        await update.message.reply_text(full_message, parse_mode='Markdown')
+        logger.info(f"Successfully sent {len(uncompleted_tasks)} tasks to user {user_id}")
+        
+    except Exception as e:
+        logger.error(f"Error in my_tasks command for user {user_id}: {e}")
+        await update.message.reply_text(
+            "❌ **Oops! Something went wrong** while fetching your tasks.\n"
+            "This might be a temporary issue. Please try again in a moment, or check your Outlook connection with /connectoutlook."
+        )
+
 # 4. Main function to set up and run the bot
 def main():
     """Start the bot."""
@@ -491,6 +729,7 @@ def main():
         # CommandHandler is for commands like /start
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("connectoutlook", connect_outlook)) # Add this line
+        application.add_handler(CommandHandler("mytasks", my_tasks)) # Add new /mytasks command
 
         # MessageHandler is for regular messages.
         # filters.TEXT means it processes only text messages.
