@@ -11,33 +11,26 @@ import atexit
 import signal
 import sys
 
-# Configure timezone for Malaysia (UTC+8)
-# All date/time operations in this bot use Malaysia timezone
-MALAYSIA_TZ = pytz.timezone('Asia/Kuala_Lumpur')
+# Import refactored modules
+from config.settings import config, constants
+from utils.lock_manager import BotLockManager
+from validators.task_validator import TaskValidator, ValidationResult
 
-# Configure Gemini API (REPLACE WITH YOUR ACTUAL API KEY)
-# It's best practice to load API keys from environment variables or a config file
-# For now, we'll put it directly, but remember to replace this for real projects!
-# For a quick start, you can paste your key directly:
-# GEMINI_API_KEY = "YOUR_GEMINI_API_KEY_HERE"
-# Even better, load from environment variable (see tip below):
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# Configure timezone for Malaysia (UTC+8) from config
+MALAYSIA_TZ = config.timezone
 
-genai.configure(api_key=GEMINI_API_KEY)
+# Initialize the Gemini model using config
+genai.configure(api_key=config.gemini_api_key)
+gemini_model = genai.GenerativeModel(config.gemini_model_name)
 
-# Initialize the Gemini model
-# We're using 'gemini-1.5-flash-latest' for its speed and cost-effectiveness
-gemini_model = genai.GenerativeModel('gemini-2.5-flash')
-
-# 1. Set up logging (optional, but good practice for debugging)
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+# Logging is already configured by config module
 logger = logging.getLogger(__name__)
 
-# 2. Define your bot's API Token (REPLACE WITH YOUR ACTUAL TOKEN!)
-TELEGRAM_BOT_TOKEN = "8487024063:AAEEuIPLgwMBHJpzn99b_0YDR4BaSxKHv9I"
+# Initialize validator with config settings
+task_validator = TaskValidator(
+    min_words=config.min_task_words,
+    max_words=config.max_task_words
+)
 
 outlook_access_token = None
 
@@ -405,8 +398,8 @@ async def echo(update: Update, context):
     user_message = update.message.text
     logger.info(f"Received message from {update.effective_user.first_name}: '{user_message}'")
 
-    if not GEMINI_API_KEY:
-        await update.message.reply_text("Error: Gemini API Key not configured. Please set GEMINI_API_KEY.")
+    if not config.gemini_api_key:
+        await update.message.reply_text("Error: Gemini API Key not configured. Please set GEMINI_API_KEY environment variable.")
         logger.error("Gemini API Key is missing.")
         return
 
@@ -512,21 +505,21 @@ async def echo(update: Update, context):
             # Validate task summary word count (only for create_task intent)
             validated_summary = raw_summary
             if intent == "create_task" and raw_summary:
-                validation_result = validate_task_summary(raw_summary)
+                validation_result = task_validator.validate_summary(raw_summary)
                 
-                if validation_result['is_valid']:
-                    validated_summary = validation_result['validated_summary']
-                    logger.info(f"Valid task summary: '{validated_summary}' ({validation_result['word_count']} words)")
+                if validation_result.is_valid:
+                    validated_summary = validation_result.validated_value
+                    logger.info(f"Valid task summary: '{validated_summary}' ({validation_result.word_count} words)")
                 else:
-                    logger.warning(f"Invalid task summary: {validation_result['message']}")
+                    logger.warning(f"Invalid task summary: {validation_result.message}")
                     # Attempt to generate a fallback summary
-                    validated_summary = generate_fallback_summary(user_message)
-                    fallback_validation = validate_task_summary(validated_summary)
+                    validated_summary = task_validator.generate_fallback_summary(user_message)
+                    fallback_validation = task_validator.validate_summary(validated_summary)
                     
-                    if fallback_validation['is_valid']:
-                        logger.info(f"Generated valid fallback summary: '{validated_summary}' ({fallback_validation['word_count']} words)")
+                    if fallback_validation.is_valid:
+                        logger.info(f"Generated valid fallback summary: '{validated_summary}' ({fallback_validation.word_count} words)")
                     else:
-                        logger.error(f"Fallback summary also invalid: {fallback_validation['message']}")
+                        logger.error(f"Fallback summary also invalid: {fallback_validation.message}")
                         # Ultimate fallback - create a minimal valid summary
                         validated_summary = "Complete important task"  # 3 words - minimum valid
                         logger.warning(f"Using emergency fallback summary: '{validated_summary}'")
@@ -722,8 +715,8 @@ async def my_tasks(update: Update, context):
 def main():
     """Start the bot."""
     try:
-        # Create the Application and pass it your bot's token.
-        application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+        # Create the Application and pass it your bot's token from config
+        application = Application.builder().token(config.telegram_bot_token).build()
 
         # Register handlers
         # CommandHandler is for commands like /start
@@ -739,9 +732,8 @@ def main():
         # Register error handler
         application.add_error_handler(error)
 
-        # Run validation test on startup (optional - can be removed in production)
-        if logger.isEnabledFor(logging.INFO):
-            test_summary_validation()
+        # Validation test moved to validators/task_validator.py
+        # Can run: task_validator.test_validation() if needed
 
         logger.info("Starting bot...")
         
@@ -759,64 +751,16 @@ def main():
             logger.error(f"❌ Failed to start bot: {e}")
         raise
 
-# Lock file mechanism to prevent multiple instances
-LOCK_FILE = "bot.lock"
-
-def create_lock_file():
-    """Create a lock file to prevent multiple instances"""
-    if os.path.exists(LOCK_FILE):
-        try:
-            with open(LOCK_FILE, 'r') as f:
-                pid = int(f.read().strip())
-            # Check if the process is still running (Windows)
-            import subprocess
-            try:
-                result = subprocess.check_output(f'tasklist /FI "PID eq {pid}"', shell=True, text=True)
-                # Check if the process actually exists in the output
-                if f"python" in result.lower() and str(pid) in result:
-                    logger.error(f"❌ Bot is already running with PID {pid}")
-                    logger.error("Please stop the existing instance first or delete the bot.lock file if no bot is running.")
-                    sys.exit(1)
-                else:
-                    # Process not running, remove stale lock file and continue
-                    os.remove(LOCK_FILE)
-                    logger.info(f"Removed stale lock file (PID {pid} no longer running)")
-            except subprocess.CalledProcessError:
-                # Process not running, remove stale lock file and continue
-                os.remove(LOCK_FILE)
-                logger.info(f"Removed stale lock file (PID {pid} no longer running)")
-        except (ValueError, FileNotFoundError):
-            # Invalid lock file, remove it
-            if os.path.exists(LOCK_FILE):
-                os.remove(LOCK_FILE)
-    
-    # Create new lock file
-    with open(LOCK_FILE, 'w') as f:
-        f.write(str(os.getpid()))
-    logger.info(f"Created lock file with PID {os.getpid()}")
-
-def remove_lock_file():
-    """Remove the lock file on exit"""
-    if os.path.exists(LOCK_FILE):
-        os.remove(LOCK_FILE)
-        logger.info("Removed lock file")
-
-def signal_handler(signum, frame):
-    """Handle shutdown signals gracefully"""
-    logger.info(f"Received signal {signum}, shutting down gracefully...")
-    remove_lock_file()
-    sys.exit(0)
+# Note: Lock file mechanism has been moved to utils/lock_manager.py
 
 if __name__ == '__main__':
-    # Set up signal handlers for graceful shutdown
-    signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
-    signal.signal(signal.SIGTERM, signal_handler)  # Termination signal
+    # Initialize lock manager using config
+    lock_manager = BotLockManager(config.lock_file_path)
     
-    # Register cleanup function
-    atexit.register(remove_lock_file)
-    
-    # Check for existing instances
-    create_lock_file()
+    # Acquire lock to prevent multiple instances
+    if not lock_manager.acquire_lock():
+        logger.error("Another bot instance is running. Exiting.")
+        sys.exit(1)
     
     try:
         main()
@@ -825,4 +769,4 @@ if __name__ == '__main__':
     except Exception as e:
         logger.error(f"Bot crashed: {e}")
     finally:
-        remove_lock_file()
+        lock_manager.release_lock()
