@@ -18,7 +18,8 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-import outlook_api
+from services import OutlookService
+from utils import TokenManager
 from formatters import format_tasks_list, get_motivational_message
 
 logger = logging.getLogger(__name__)
@@ -26,9 +27,9 @@ logger = logging.getLogger(__name__)
 # Malaysia timezone for consistent date handling
 MALAYSIA_TZ = pytz.timezone('Asia/Kuala_Lumpur')
 
-# Global variable to store Outlook access token (shared with message_handlers)
-# In a production app, this should be managed differently (per-user storage, database, etc.)
-outlook_access_token = None
+# Initialize services
+outlook_service = OutlookService()
+token_manager = TokenManager()
 
 # Rate limiting dictionary to track last /mytasks usage per user
 user_last_mytasks_request = {}
@@ -82,15 +83,15 @@ async def connect_outlook(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     Features:
     - Initiates Microsoft device code flow
-    - Stores access token globally (TODO: per-user storage)
+    - Stores access token in TokenManager
     - Provides user feedback throughout process
     - Comprehensive error handling and logging
     
     Process:
     1. Notify user that connection is starting
-    2. Call outlook_api.get_auth_token() to start device code flow
+    2. Call outlook_service.authenticate() to start device code flow
     3. User completes authentication in browser
-    4. Store access token for subsequent API calls
+    4. Store access token in TokenManager for subsequent API calls
     5. Confirm successful connection
     
     Args:
@@ -101,9 +102,9 @@ async def connect_outlook(update: Update, context: ContextTypes.DEFAULT_TYPE):
         None (sends messages via Telegram API)
     
     Technical Note:
-        Currently stores token in global variable. In production:
-        - Use per-user storage (database, cache)
-        - Implement token refresh logic
+        Uses TokenManager for centralized token storage. In production:
+        - Implement per-user token storage (database, cache)
+        - Add token refresh logic
         - Handle token expiration gracefully
     
     Example:
@@ -112,13 +113,12 @@ async def connect_outlook(update: Update, context: ContextTypes.DEFAULT_TYPE):
              [User completes auth in browser]
              ✅ Outlook connected successfully! You can now create tasks...
     """
-    global outlook_access_token
     await update.message.reply_text("Initiating Outlook connection...")
     try:
-        # Call the get_auth_token from our outlook_api module
+        # Call authenticate through the OutlookService
         # This starts the device code flow and returns the access token
-        token = outlook_api.get_auth_token()
-        outlook_access_token = token  # Store the token globally
+        token = outlook_service.authenticate()
+        token_manager.set_token(token)  # Store in TokenManager
         await update.message.reply_text(
             "✅ Outlook connected successfully! You can now create tasks by sending me task descriptions.\n"
             "🇲🇾 All times will be handled in Malaysia timezone (UTC+8)."
@@ -134,7 +134,7 @@ async def my_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     Handle /mytasks command to display user's uncompleted Outlook tasks.
     
     Features:
-    - Fetches uncompleted tasks from Outlook API
+    - Fetches uncompleted tasks from Outlook API via OutlookService
     - Displays tasks with formatting (due dates, priorities)
     - Counts overdue tasks
     - Generates motivational messages
@@ -157,7 +157,7 @@ async def my_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     Technical Details:
         - Uses Malaysia timezone for date calculations
-        - Fetches max 10 tasks from API
+        - Fetches max 10 tasks from API via OutlookService
         - Parses due dates to identify overdue tasks
         - Formats output using formatters module
         - Handles authentication errors gracefully
@@ -173,14 +173,13 @@ async def my_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
              💪 **Almost there!** Just 3 tasks to go - you've got this! 🚀
              🔴 **Heads up:** 1 task overdue - consider tackling it first!
     """
-    global outlook_access_token
     user_id = update.effective_user.id
     user_name = update.effective_user.first_name
     
     logger.info(f"User {user_name} ({user_id}) requested /mytasks")
     
     # Check if user is authenticated
-    if not outlook_access_token:
+    if not token_manager.has_token():
         await update.message.reply_text(
             "🔗 **Please connect to Outlook first!**\n"
             "Use the /connectoutlook command to authenticate your account."
@@ -208,9 +207,10 @@ async def my_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Show "typing" indicator while fetching tasks
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
         
-        # Fetch uncompleted tasks from Outlook
+        # Fetch uncompleted tasks from Outlook via OutlookService
         logger.info(f"Fetching uncompleted tasks for user {user_id}")
-        uncompleted_tasks = outlook_api.get_uncompleted_tasks(outlook_access_token, max_tasks=10)
+        access_token = token_manager.get_token()
+        uncompleted_tasks = outlook_service.get_uncompleted_tasks(access_token, max_tasks=10)
         
         # Count overdue tasks
         overdue_count = 0
@@ -249,12 +249,24 @@ async def my_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Module-level function to set the outlook token (for use by message_handlers)
 def set_outlook_token(token):
-    """Set the global outlook access token."""
-    global outlook_access_token
-    outlook_access_token = token
+    """Set the outlook access token in TokenManager."""
+    token_manager.set_token(token)
 
 
 # Module-level function to get the outlook token (for use by message_handlers)
 def get_outlook_token():
-    """Get the global outlook access token."""
-    return outlook_access_token
+    """Get the outlook access token from TokenManager."""
+    return token_manager.get_token()
+
+
+# Module-level function to get the token manager (for use by message_handlers)
+def get_token_manager():
+    """Get the TokenManager instance."""
+    return token_manager
+
+
+# Module-level function to get the outlook service (for use by message_handlers)
+def get_outlook_service():
+    """Get the OutlookService instance."""
+    return outlook_service
+

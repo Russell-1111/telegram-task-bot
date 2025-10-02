@@ -20,9 +20,9 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-import outlook_api
 from config import config
-from services import LLMService
+from services import LLMService, OutlookService
+from utils import UserStateManager, TokenManager
 from validators import TaskValidator
 from formatters import validate_and_process_date, format_due_date_for_outlook
 
@@ -31,46 +31,12 @@ logger = logging.getLogger(__name__)
 # Malaysia timezone for consistent date handling
 MALAYSIA_TZ = pytz.timezone('Asia/Kuala_Lumpur')
 
-# Initialize LLM service and task validator
+# Initialize services and utilities
 llm_service = LLMService(config.gemini_api_key, config.gemini_model_name)
 task_validator = TaskValidator()
-
-# Dictionary to store user's last created task for updates
-# Format: {user_id: {"id": task_id, "title": task_title, "due_date": due_date, "created_at": datetime}}
-user_last_tasks = {}
-
-
-def store_user_last_task(user_id, task_id, task_title, due_date=None):
-    """
-    Store the user's last created task for potential due date updates.
-    
-    Args:
-        user_id (int): Telegram user ID
-        task_id (str): Outlook task ID
-        task_title (str): Task title/summary
-        due_date (str): Due date in YYYY-MM-DD format (optional)
-    """
-    user_last_tasks[user_id] = {
-        "id": task_id,
-        "title": task_title, 
-        "due_date": due_date,
-        "created_at": datetime.now(MALAYSIA_TZ)
-    }
-    logger.info(f"Stored last task for user {user_id}: {task_title}")
-
-
-def get_user_last_task(user_id):
-    """
-    Get the user's last created task.
-    
-    Args:
-        user_id (int): Telegram user ID
-    
-    Returns:
-        dict: Task info with keys: id, title, due_date, created_at
-              None if no task found
-    """
-    return user_last_tasks.get(user_id, None)
+state_manager = UserStateManager()
+outlook_service = OutlookService()
+token_manager = TokenManager()
 
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -82,7 +48,7 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     - Task summary validation (3-12 words)
     - Fallback summary generation for invalid LLM outputs
     - Date parsing and validation (Malaysia timezone)
-    - Outlook task creation with due dates
+    - Outlook task creation with due dates via OutlookService
     - Due date updates for existing tasks
     - Comprehensive error handling and user feedback
     
@@ -91,8 +57,8 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     2. Send to LLM service for intent analysis
     3. Validate task summary (if creating task)
     4. Process due date (if provided)
-    5. Call Outlook API (create or update)
-    6. Store task info for future updates
+    5. Call OutlookService (create or update)
+    6. Store task info in StateManager for future updates
     7. Send confirmation to user
     
     Args:
@@ -117,12 +83,12 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
              📅 New due date: 2024-12-20
     
     Technical Note:
-        Uses global outlook_access_token from command_handlers module.
-        In production, implement per-user token storage.
+        Uses TokenManager for token storage and StateManager for user state.
     """
-    # Import outlook_access_token from command_handlers
-    from .command_handlers import get_outlook_token, set_outlook_token
-    outlook_access_token = get_outlook_token()
+    # Import token_manager and outlook_service from command_handlers to ensure we use the same instances
+    from .command_handlers import get_token_manager, get_outlook_service
+    token_manager_instance = get_token_manager()
+    outlook_service_instance = get_outlook_service()
     
     user_message = update.message.text
     user_id = update.effective_user.id
@@ -137,8 +103,8 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Get current date for LLM context
         current_date = datetime.now(MALAYSIA_TZ).strftime("%Y-%m-%d")
         
-        # Get user's last task for update context
-        last_task = get_user_last_task(user_id)
+        # Get user's last task for update context from StateManager
+        last_task = state_manager.get_user_task(user_id)
         last_task_context = None
         if last_task:
             last_task_context = {
@@ -189,16 +155,17 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # --- ORCHESTRATION LOGIC ---
         if intent == "create_task" and summary:
             # Create new task
-            if outlook_access_token:
+            if token_manager_instance.has_token():
                 try:
                     # Use LLM-extracted due date or fallback to current date
                     due_datetime = format_due_date_for_outlook(processed_due_date)
                     due_date_display = processed_due_date if processed_due_date else "Today (Malaysia time)"
                     
-                    task_data = outlook_api.create_outlook_task(outlook_access_token, summary, due_datetime)
+                    access_token = token_manager_instance.get_token()
+                    task_data = outlook_service_instance.create_task(access_token, summary, due_datetime)
                     
-                    # Store the created task for potential due date updates
-                    store_user_last_task(user_id, task_data['id'], summary, processed_due_date)
+                    # Store the created task in StateManager for potential due date updates
+                    state_manager.set_user_task(user_id, task_data['id'], summary, processed_due_date)
                     
                     reply_message = f"✅ Task created in Outlook: '{summary}'\n📅 Due: {due_date_display}"
                     logger.info(f"Successfully created task in Outlook: '{summary}' with due date {due_date_display} (Malaysia timezone)")
@@ -210,20 +177,21 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
         elif intent == "update_due_date" and processed_due_date:
             # Update existing task's due date
-            last_task = get_user_last_task(user_id)
+            last_task = state_manager.get_user_task(user_id)
             if not last_task:
                 reply_message = "❌ No recent task found to update. Create a task first, then I can help you change its due date."
-            elif not outlook_access_token:
+            elif not token_manager_instance.has_token():
                 reply_message = "🔗 I need to connect to your Outlook first! Please use the /connectoutlook command."
             else:
                 try:
                     # Update the existing task's due date
                     due_datetime = format_due_date_for_outlook(processed_due_date)
                     
-                    updated_task = outlook_api.update_task_due_date(outlook_access_token, last_task['id'], due_datetime)
+                    access_token = token_manager_instance.get_token()
+                    updated_task = outlook_service_instance.update_task_due_date(access_token, last_task['id'], due_datetime)
                     
-                    # Update our stored task info
-                    store_user_last_task(user_id, last_task['id'], last_task['title'], processed_due_date)
+                    # Update our stored task info in StateManager
+                    state_manager.set_user_task(user_id, last_task['id'], last_task['title'], processed_due_date)
                     
                     reply_message = f"✅ Updated task: '{last_task['title']}'\n📅 New due date: {processed_due_date}"
                     logger.info(f"Successfully updated task due date for user {user_id}: '{last_task['title']}' -> {processed_due_date}")
