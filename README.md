@@ -179,7 +179,15 @@ This bot follows a **clean service layer architecture** implemented across 3 ref
 
 See [`docs/PHASE1-SUMMARY.md`](docs/PHASE1-SUMMARY.md), [`docs/PHASE2-SUMMARY.md`](docs/PHASE2-SUMMARY.md), and [`docs/PHASE3-SUMMARY.md`](docs/PHASE3-SUMMARY.md) for detailed metrics.
 
-## 🐛 Troubleshooting
+## � Documentation
+
+- **[API Reference](docs/API.md)** - Complete API documentation for all services, utilities, and commands
+- **[Code Examples](docs/EXAMPLES.md)** - Practical usage patterns, integration examples, and common recipes
+- **[Testing Guide](TESTING-GUIDE.md)** - Testing instructions and module reference
+- **[Architecture Review](docs/ARCHITECTURE-REVIEW.md)** - Detailed architecture analysis and design decisions
+- **[Setup Guide](docs/SETUP.md)** - Installation and configuration instructions
+
+## �🐛 Troubleshooting
 
 - **409 Conflict Error**: Use `scripts\git-revert.bat` to stop multiple instances
 - **Authentication Issues**: Reconnect using `/connectoutlook`

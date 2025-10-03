@@ -1,5 +1,21 @@
 # API Documentation
 
+**Complete reference for the Telegram Task Bot architecture**
+
+This document provides detailed API documentation for all bot commands, services, utilities, and integration patterns. For practical code examples and usage patterns, see [EXAMPLES.md](EXAMPLES.md).
+
+---
+
+## Table of Contents
+
+1. [Bot Commands](#bot-commands)
+2. [Service Layer](#service-layer)
+3. [Utilities](#utilities)
+4. [Error Handling](#error-handling)
+5. [Examples & Recipes](#examples--recipes)
+
+---
+
 ## Bot Commands
 
 ### `/start`
@@ -27,6 +43,8 @@ Initiates Microsoft Outlook authentication flow.
 
 **Implementation**: Uses `OutlookService.authenticate()` and `TokenManager.set_token()`
 
+**See Also**: [Authentication Flow Example](EXAMPLES.md#authentication-flow)
+
 ### `/mytasks`
 Displays user's uncompleted tasks with motivational messages.
 
@@ -39,6 +57,10 @@ Displays user's uncompleted tasks with motivational messages.
 - Motivational messages based on task count
 - Rate limiting (1 request/minute per user)
 - Automatic timezone conversion (Malaysia UTC+8)
+
+**Implementation**: Uses `OutlookService.get_uncompleted_tasks()` and `TaskFormatter.format_task_list()`
+
+**See Also**: [MyTasks Command Example](EXAMPLES.md#example-2-mytasks-command-with-formatting)
 
 **Response Examples**:
 
@@ -141,6 +163,8 @@ task = outlook_service.create_task(
     "2025-10-05T17:00:00.0000000"
 )
 ```
+
+**See Also**: [Task Creation Flow Example](EXAMPLES.md#task-creation-flow)
 
 #### Update Task Due Date
 - **Endpoint**: `/me/todo/lists/{listId}/tasks/{taskId}`
@@ -253,6 +277,8 @@ tasks = outlook_service.get_uncompleted_tasks(
 )
 ```
 
+**See Also**: [OutlookService Examples](EXAMPLES.md#outlookservice)
+
 ---
 
 ### UserStateManager
@@ -315,6 +341,8 @@ last_task = state_manager.get_user_task(123456)
 if last_task:
     print(f"Updating task: {last_task['title']}")
 ```
+
+**See Also**: [StateManager Examples](EXAMPLES.md#statemanager)
 
 ---
 
@@ -428,6 +456,8 @@ print(intent.intent)    # "create_task"
 print(intent.summary)   # "Buy groceries"
 print(intent.due_date)  # "tomorrow"
 ```
+
+**See Also**: [LLMService Examples](EXAMPLES.md#llmservice)
 
 ---
 
@@ -558,3 +588,42 @@ External APIs
 **Current Version**: v1.3.0  
 **Last Updated**: October 3, 2025  
 **Status**: Production-Ready ✅
+
+---
+
+## Examples & Recipes
+
+For practical code examples and usage patterns, see [EXAMPLES.md](EXAMPLES.md):
+
+### Service Layer Examples
+- [OutlookService Examples](EXAMPLES.md#outlookservice) - Task creation, retrieval, updates, batch operations
+- [StateManager Examples](EXAMPLES.md#statemanager) - User state management, conversation flows
+- [TokenManager Examples](EXAMPLES.md#tokenmanager) - Token lifecycle, expiration handling
+- [LLMService Examples](EXAMPLES.md#llmservice) - Natural language parsing, validation
+
+### Integration Patterns
+- [Authentication Flow](EXAMPLES.md#authentication-flow) - Complete OAuth workflow
+- [Task Creation Flow](EXAMPLES.md#task-creation-flow) - End-to-end task creation
+- [Message Handling Flow](EXAMPLES.md#message-handling-flow) - Multi-step conversations
+
+### Handler Examples
+- [Command Handlers](EXAMPLES.md#command-handlers) - /start, /mytasks, /login
+- [Message Handlers](EXAMPLES.md#message-handlers) - Stateful message processing
+
+### Testing Examples
+- [Unit Testing](EXAMPLES.md#unit-testing) - Service and utility tests
+- [Mocking Patterns](EXAMPLES.md#mocking-patterns) - Telegram API mocks
+- [Integration Testing](EXAMPLES.md#integration-testing) - Full lifecycle tests
+
+### Common Recipes
+- [Task Batch Import](EXAMPLES.md#recipe-1-task-batch-import) - Import from CSV
+- [Smart Task Reminders](EXAMPLES.md#recipe-2-smart-task-reminders) - Automated reminders
+- [Task Statistics](EXAMPLES.md#recipe-3-task-statistics) - Analytics and reporting
+
+---
+
+**Need Help?**
+- 📖 Full Examples: [EXAMPLES.md](EXAMPLES.md)
+- 🏗️ Architecture: [ARCHITECTURE-REVIEW.md](ARCHITECTURE-REVIEW.md)
+- 🧪 Testing: [TESTING-GUIDE.md](../TESTING-GUIDE.md)
+- 📋 Setup: [README.md](../README.md)
