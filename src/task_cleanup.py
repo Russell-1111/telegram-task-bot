@@ -1,66 +1,110 @@
-# Open task_cleanup.py
+"""
+Task Cleanup Script - Refactored to Use Service Layer
 
-import outlook_api
-from datetime import datetime, timedelta, timezone # Need timedelta for date comparison
+This script deletes old Outlook tasks (tasks with due dates before today)
+using the new service layer architecture introduced in Phase 3.
+
+Changes from legacy version:
+- Uses OutlookService instead of direct outlook_api calls
+- Uses TokenManager for centralized token management
+- Consistent with main bot architecture
+- Improved error handling and logging
+
+Usage:
+    python src/task_cleanup.py
+"""
+
+import sys
+import os
+from datetime import datetime, timezone
 import logging
-import sys # To allow logging to console as well
 import pytz
+
+# Add src directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+# Import new service layer (Phase 3 architecture)
+from services import OutlookService
+from utils import TokenManager
 
 # --- Setup Logging for Cleanup Script ---
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO,
     handlers=[
-        logging.StreamHandler(sys.stdout) # Also log to console
+        logging.StreamHandler(sys.stdout)  # Log to console
     ]
 )
 logger = logging.getLogger(__name__)
 
 def cleanup_old_tasks():
-    logger.info("Starting cleanup of old Outlook tasks...")
+    """
+    Delete old Outlook tasks (tasks with due dates before today).
     
-    # Add this debug info
+    Uses Phase 3 service layer architecture:
+    - OutlookService for API operations
+    - TokenManager for token management
+    - Consistent error handling
+    
+    Returns:
+        int: Number of tasks deleted, or -1 if cleanup failed
+    """
+    logger.info("=" * 60)
+    logger.info("Starting cleanup of old Outlook tasks...")
+    logger.info("=" * 60)
+    
+    # Define Malaysia timezone for date comparisons
     malaysia_tz = pytz.timezone('Asia/Kuala_Lumpur')
     today_malaysia = datetime.now(malaysia_tz).date()
     logger.info(f"Today in Malaysia timezone: {today_malaysia}")
-
-    # 1. Get Authentication Token
+    
+    # Initialize service layer components
+    outlook_service = OutlookService()
+    token_manager = TokenManager()
+    
+    # 1. Authenticate with Outlook using OutlookService
     access_token = None
     try:
-        access_token = outlook_api.get_auth_token()
-        logger.info("Successfully authenticated with Outlook!")
+        logger.info("Initiating Outlook authentication...")
+        access_token = outlook_service.authenticate()
+        token_manager.set_token(access_token)
+        logger.info("✅ Successfully authenticated with Outlook!")
         
     except Exception as e:
-        logger.error(f"Authentication failed for cleanup script: {e}")
-        print(f"ERROR: Could not authenticate for Outlook cleanup. Please try again. Details: {e}")
-        return
+        logger.error(f"❌ Authentication failed for cleanup script: {e}")
+        print(f"\nERROR: Could not authenticate for Outlook cleanup.")
+        print(f"Details: {e}")
+        print("Please ensure you have network connectivity and valid credentials.\n")
+        return -1
 
     if not access_token:
         logger.error("No access token obtained. Cannot proceed with cleanup.")
-        return
+        return -1
 
-    # 2. Get all tasks
+    # 2. Get all tasks using OutlookService
     all_tasks = []
     try:
-        all_tasks = outlook_api.get_all_tasks(access_token)
-        logger.info(f"Found {len(all_tasks)} tasks in total.")
+        logger.info("Fetching all tasks from Outlook...")
+        all_tasks = outlook_service.get_all_tasks(access_token)
+        logger.info(f"✅ Found {len(all_tasks)} tasks in total.")
     except Exception as e:
-        logger.error(f"Failed to retrieve tasks: {e}")
-        print(f"ERROR: Failed to retrieve tasks. Cleanup aborted. Details: {e}")
-        return
+        logger.error(f"❌ Failed to retrieve tasks: {e}")
+        print(f"\nERROR: Failed to retrieve tasks. Cleanup aborted.")
+        print(f"Details: {e}\n")
+        return -1
 
-    # 3. Determine the "cutoff" date
-    # We want to delete tasks whose due date is *yesterday* or earlier.
-    # So, the cutoff is the start of *today*. Anything before that is old.
-    # Example: If today is Sept 22, 2025, tasks due Sept 21 or earlier are old.
+    # 3. Process tasks and delete old ones
+    # A task is "old" if its due date is before today (Malaysia timezone)
+    # Example: If today is Oct 3, 2025, tasks due Oct 2 or earlier are old.
     
-    # Define the Malaysia timezone
-    malaysia_tz = pytz.timezone('Asia/Kuala_Lumpur')
-
-    # If a task's due date is BEFORE today_malaysia, it's old.
-    today_malaysia = datetime.now(malaysia_tz).date()
-   
     deleted_count = 0
+    skipped_count = 0
+    error_count = 0
+    
+    logger.info("-" * 60)
+    logger.info("Processing tasks...")
+    logger.info("-" * 60)
+    
     # 4. Loop through each task and check its due date
     for task in all_tasks:
         task_title = task.get("title", "No Title")
@@ -99,26 +143,83 @@ def cleanup_old_tasks():
                 
                 logger.info(f"Task '{task_title}' - Original: {task_due_date_str} ({api_timezone_str}) -> Malaysia: {task_due_date_malaysia}")
                 
-                # Compare the task's due date (just the date part) with today's date in Malaysia tiemezone
+                # Compare the task's due date (just the date part) with today's date in Malaysia timezone
                 if task_due_date_malaysia < today_malaysia:
-                    logger.info(f"Task '{task_title}' (ID: {task_id}) is old (due: {task_due_date_malaysia}), attempting to delete.")
+                    logger.info(f"🗑️  Task '{task_title}' (ID: {task_id}) is old (due: {task_due_date_malaysia}), attempting to delete.")
                     try:
-                        outlook_api.delete_task(access_token, task_id)
+                        outlook_service.delete_task(access_token, task_id)
                         deleted_count += 1
+                        logger.info(f"   ✅ Deleted successfully")
                     except Exception as delete_error:
-                        logger.error(f"Failed to delete task '{task_title}' (ID: {task_id}): {delete_error}")
+                        logger.error(f"   ❌ Failed to delete: {delete_error}")
+                        error_count += 1
                 else:
-                    logger.debug(f"Task '{task_title}' (ID: {task_id}) is not old (due: {task_due_date_malaysia}). Skipping.")
+                    logger.debug(f"⏭️  Task '{task_title}' (ID: {task_id}) is not old (due: {task_due_date_malaysia}). Skipping.")
+                    skipped_count += 1
 
-            except ValueError:
-                logger.warning(f"Task '{task_title}' (ID: {task_id}) has an invalid due date format: {task_due_date_str}. Skipping date check.")
+            except ValueError as ve:
+                logger.warning(f"⚠️  Task '{task_title}' (ID: {task_id}) has invalid due date format: {task_due_date_str}. Skipping.")
+                skipped_count += 1
             except Exception as e:
-                logger.error(f"Error processing task '{task_title}' (ID: {task_id}): {e}")
+                logger.error(f"❌ Error processing task '{task_title}' (ID: {task_id}): {e}")
+                error_count += 1
         else:
-            logger.debug(f"Task '{task_title}' (ID: {task_id}) has no due date. Skipping.")
+            logger.debug(f"⏭️  Task '{task_title}' (ID: {task_id}) has no due date. Skipping.")
+            skipped_count += 1
     
-    logger.info(f"Cleanup complete. Deleted {deleted_count} old tasks.")
+    # 5. Print summary
+    logger.info("=" * 60)
+    logger.info("CLEANUP SUMMARY")
+    logger.info("=" * 60)
+    logger.info(f"Total tasks processed:   {len(all_tasks)}")
+    logger.info(f"Tasks deleted:           {deleted_count} ✅")
+    logger.info(f"Tasks skipped:           {skipped_count} ⏭️")
+    logger.info(f"Errors encountered:      {error_count} ❌")
+    logger.info("=" * 60)
+    
+    if deleted_count > 0:
+        logger.info(f"✅ Cleanup complete! Successfully deleted {deleted_count} old task(s).")
+    else:
+        logger.info("✅ Cleanup complete! No old tasks found to delete.")
+    
+    return deleted_count
 
-# This makes sure cleanup_old_tasks() runs when you execute this script
+def main():
+    """
+    Main entry point for task cleanup script.
+    
+    Provides user-friendly console output and proper exit codes.
+    """
+    print("\n" + "=" * 60)
+    print("🧹 OUTLOOK TASK CLEANUP UTILITY")
+    print("=" * 60)
+    print("This script will delete tasks with due dates before today.")
+    print("Using Phase 3 Service Layer Architecture")
+    print("=" * 60 + "\n")
+    
+    try:
+        deleted_count = cleanup_old_tasks()
+        
+        if deleted_count == -1:
+            print("\n❌ Cleanup failed. Check logs above for details.\n")
+            sys.exit(1)
+        elif deleted_count == 0:
+            print("\n✅ No old tasks to delete. Your task list is up to date!\n")
+            sys.exit(0)
+        else:
+            print(f"\n✅ Successfully deleted {deleted_count} old task(s)!\n")
+            sys.exit(0)
+            
+    except KeyboardInterrupt:
+        print("\n\n⚠️  Cleanup cancelled by user.\n")
+        sys.exit(130)
+    except Exception as e:
+        logger.critical(f"Unexpected error in cleanup script: {e}", exc_info=True)
+        print(f"\n❌ CRITICAL ERROR: {e}")
+        print("See logs above for full stack trace.\n")
+        sys.exit(1)
+
+
+# This makes sure main() runs when you execute this script
 if __name__ == "__main__":
-    cleanup_old_tasks()
+    main()
