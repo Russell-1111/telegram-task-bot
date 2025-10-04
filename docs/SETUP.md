@@ -47,61 +47,99 @@ source .venv/bin/activate  # Linux/Mac
 pip install -r requirements.txt
 ```
 
-### 2. Configuration
-```bash
-# Set environment variables
-set GEMINI_API_KEY=your_gemini_api_key_here
+### 2. Environment Configuration
 
-# Or create config file
-copy config\config_template.py config\config.py
-# Edit config.py with your actual values
+**⭐ Recommended: Using .env file**
+
+1. Open the `.env` file (already created in project root)
+2. Fill in your API keys:
+   ```env
+   TELEGRAM_BOT_TOKEN=your_actual_telegram_token_here
+   GEMINI_API_KEY=your_actual_gemini_key_here
+   MS_CLIENT_ID=your_actual_microsoft_client_id_here
+   MS_TENANT_ID=common  # or your specific tenant ID
+   ```
+
+3. Save the file (it's already protected by `.gitignore`)
+
+**Alternative: Manual environment variables (PowerShell)**
+```powershell
+$env:TELEGRAM_BOT_TOKEN="your_token_here"
+$env:GEMINI_API_KEY="your_key_here"
+$env:MS_CLIENT_ID="your_client_id_here"
 ```
 
 ### 3. Verify Installation
 ```bash
-# Test bot startup
+# Load environment and test bot startup
+.\setup-env.ps1  # Loads variables from .env
 python src\bot.py
 ```
 
 ## Configuration Options
 
-### Environment Variables
-- `GEMINI_API_KEY` - Required for AI processing
-- `TELEGRAM_BOT_TOKEN` - Can be set in code or environment
+### Environment Variables (Loaded from .env file)
+- `TELEGRAM_BOT_TOKEN` - **Required** - Your Telegram bot token
+- `GEMINI_API_KEY` - **Required** - Google Gemini API key for AI processing
+- `MS_CLIENT_ID` - **Required** - Azure app registration client ID
+- `MS_TENANT_ID` - **Optional** - Azure tenant ID (defaults to "common")
+- `LOG_LEVEL` - **Optional** - Logging level (defaults to "INFO")
+- `MIN_TASK_WORDS` - **Optional** - Minimum task summary words (default: 3)
+- `MAX_TASK_WORDS` - **Optional** - Maximum task summary words (default: 12)
 
-### Bot Settings
-Edit values in `src\bot.py`:
-- `TELEGRAM_BOT_TOKEN` - Your bot token
-- `CLIENT_ID` - Azure client ID
-- `AUTHORITY` - Azure authority URL
+### Using setup-env.ps1 Script
+The `setup-env.ps1` PowerShell script provides:
+- ✅ Automatic loading of all variables from `.env`
+- ✅ Validation of required keys
+- ✅ Masked display of API keys for security
+- ✅ Clear error messages if keys are missing
+
+Run it before starting the bot:
+```powershell
+.\setup-env.ps1
+```
 
 ### Timezone Configuration
-The bot is configured for Malaysia timezone (`Asia/Kuala_Lumpur`). To change:
-1. Edit `MALAYSIA_TZ` in `src\bot.py`
-2. Update timezone references in date formatting functions
+The bot is configured for Malaysia timezone (`Asia/Kuala_Lumpur` - UTC+8).
+To change the timezone, edit `src/config/settings.py`:
+```python
+timezone: pytz.tzinfo.BaseTzInfo = field(default_factory=lambda: pytz.timezone('Your/Timezone'))
+```
 
 ## First Run
 
-### 1. Start the Bot
+### Quick Start (Using start-bot.bat)
 ```bash
-# Using the start script
-start-bot.bat
+# The start script does everything automatically:
+# 1. Loads environment from .env
+# 2. Activates virtual environment
+# 3. Starts the bot
+.\start-bot.bat
+```
 
-# Or directly
+### Manual Start
+```bash
+# 1. Load environment variables
+.\setup-env.ps1
+
+# 2. Activate virtual environment
+.\.venv\Scripts\Activate.ps1
+
+# 3. Start the bot
 python src\bot.py
 ```
 
-### 2. Connect to Telegram
+### Connect to Telegram
 1. Open Telegram
 2. Search for your bot by username
 3. Send `/start` command
 
-### 3. Connect to Outlook
+### Connect to Outlook
 1. Send `/connectoutlook` command
 2. Follow the device code authentication flow
 3. Sign in with your Microsoft account
 
-### 4. Test Task Creation
+### Test Task Creation
 Send a message like: "Remind me to buy groceries tomorrow"
 
 ## Troubleshooting
@@ -130,17 +168,26 @@ Send a message like: "Remind me to buy groceries tomorrow"
 
 ## Security Considerations
 
-### API Keys
-- Never commit API keys to version control
-- Use environment variables or config files
-- Keep config files in `.gitignore`
+### API Keys Protection
+- ✅ `.env` file is excluded from git (via `.gitignore`)
+- ✅ Never commit `.env` to version control
+- ✅ Use `.env.template` as reference for required keys
+- ✅ `setup-env.ps1` displays masked values only
+- ⚠️ Keep `.env` file permissions restricted
+- ⚠️ Regenerate keys if accidentally exposed
 
-### Bot Token
+### Environment Variables
+- Use `.env` file for local development
+- Use system environment variables for production/servers
+- Never hardcode API keys in source code
+
+### Bot Token Security
 - Treat as password - keep secret
-- Regenerate if compromised
-- Use environment variables in production
+- Regenerate via @BotFather if compromised
+- Don't share in screenshots or logs
 
 ### Microsoft Authentication
-- Tokens stored in memory only
+- Tokens stored in memory only (via TokenManager class)
 - Re-authentication required per session
 - No persistent token storage
+- Device code flow provides secure authentication

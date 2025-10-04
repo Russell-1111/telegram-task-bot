@@ -44,11 +44,35 @@ An intelligent Telegram bot that integrates with Microsoft Outlook to manage tas
    ```
 
 4. **Configure environment variables**
-   ```bash
-   set GEMINI_API_KEY=your_gemini_api_key_here
+   
+   **Option A: Using the setup script (Recommended)**
+   ```powershell
+   # 1. Edit .env file and add your API keys
+   notepad .env
+   
+   # 2. Run the setup script
+   .\setup-env.ps1
+   
+   # 3. Activate virtual environment
+   .\.venv\Scripts\Activate.ps1
+   
+   # 4. Start the bot
+   python src\bot.py
+   ```
+   
+   **Option B: Manual environment variables**
+   ```powershell
+   $env:TELEGRAM_BOT_TOKEN="your_token_here"
+   $env:GEMINI_API_KEY="your_key_here"
+   $env:MS_CLIENT_ID="your_client_id_here"
    ```
 
-5. **Run the bot**
+5. **Get your API keys**
+   - **Telegram Bot Token**: Talk to [@BotFather](https://t.me/botfather) on Telegram
+   - **Gemini API Key**: Get from [Google AI Studio](https://aistudio.google.com/app/apikey)
+   - **Microsoft Client ID**: Create app in [Azure Portal](https://portal.azure.com) → App Registrations
+
+6. **Run the bot**
    ```bash
    python src\bot.py
    ```
