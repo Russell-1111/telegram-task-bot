@@ -19,7 +19,15 @@ import logging
 from typing import Optional, List, Dict, Any
 
 # Import the underlying outlook_api module functions
-from src import outlook_api
+import sys
+from pathlib import Path
+
+# Add parent directory to path if needed
+parent_dir = Path(__file__).parent.parent.parent
+if str(parent_dir) not in sys.path:
+    sys.path.insert(0, str(parent_dir))
+
+import outlook_api
 
 # Configure logging
 logger = logging.getLogger(__name__)
