@@ -174,9 +174,15 @@ class LLMService:
             "- Set 'intent' to 'unknown' for other requests",
             "",
             "Summary Rules:",
-            "- For new tasks: provide a concise task summary using EXACTLY 3-12 words (no more, no less)",
-            "- Focus on action verbs and key nouns, avoid articles and filler words",
-            "- Examples: 'Buy groceries' (2 words - too short), 'Buy groceries and milk' (4 words - good)",
+            "- For new tasks: CONDENSE the user's message into a clear, action-focused summary (3-12 words)",
+            "- REMOVE filler phrases: 'I want to', 'I need to', 'I have to', 'I would like to', 'Can you', 'Please'",
+            "- EXTRACT the core action and object: focus on what needs to be done, not how the user phrased it",
+            "- Use strong action verbs at the start: Draft, Create, Submit, Review, Complete, etc.",
+            "- Examples of transformation:",
+            "  • 'I want to have a draft for my literature review using llm' -> 'Draft literature review using LLM'",
+            "  • 'I need to buy groceries and milk tomorrow' -> 'Buy groceries and milk'",
+            "  • 'Can you remind me to call the dentist?' -> 'Call dentist'",
+            "  • 'Please help me submit my report by Friday' -> 'Submit report'",
             "- For due date updates: use empty string (the existing task title will be used)",
             "- For unknown: use empty string",
             "",
@@ -190,10 +196,15 @@ class LLMService:
             "- All dates should be calculated based on Malaysia timezone",
             "",
             "Examples:",
-            "User: 'Buy groceries tomorrow' -> {'intent': 'create_task', 'summary': 'Buy groceries and supplies', 'due_date': '2025-10-03'}",
-            "User: 'Change due date to Friday' -> {'intent': 'update_due_date', 'summary': '', 'due_date': '2025-10-04'}",
-            "User: 'Submit report by December 1st' -> {'intent': 'create_task', 'summary': 'Submit important quarterly report', 'due_date': '2025-12-01'}",
+            "User: 'Buy groceries tomorrow' -> {'intent': 'create_task', 'summary': 'Buy groceries', 'due_date': '2025-10-07'}",
+            "User: 'I want to have a draft for my literature review using llm' -> {'intent': 'create_task', 'summary': 'Draft literature review using LLM', 'due_date': null}",
+            "User: 'I need to call the dentist on Friday' -> {'intent': 'create_task', 'summary': 'Call dentist', 'due_date': '2025-10-10'}",
+            "User: 'Submit report by December 1st' -> {'intent': 'create_task', 'summary': 'Submit report', 'due_date': '2025-12-01'}",
+            "User: 'Change due date to Friday' -> {'intent': 'update_due_date', 'summary': '', 'due_date': '2025-10-10'}",
             "User: 'What time is it?' -> {'intent': 'unknown', 'summary': '', 'due_date': null}",
+            "User: 'Hello!' -> {'intent': 'unknown', 'summary': '', 'due_date': null}",
+            "User: 'How are you doing?' -> {'intent': 'unknown', 'summary': '', 'due_date': null}",
+            "User: 'Thanks' -> {'intent': 'unknown', 'summary': '', 'due_date': null}",
             "",
             f"Now analyze this request and provide your JSON response:\nUser Request: '{message}'"
         ]
@@ -286,8 +297,8 @@ class LLMService:
         """
         logger.warning(f"Creating fallback intent due to: {reason}")
         
-        # Truncate message to reasonable length
-        truncated_summary = ' '.join(user_message.split()[:8])
+        # Truncate message to reasonable length (max 12 words)
+        truncated_summary = ' '.join(user_message.split()[:12])
         
         return TaskIntent(
             intent='create_task',

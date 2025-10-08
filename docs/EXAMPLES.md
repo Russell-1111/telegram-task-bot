@@ -191,19 +191,17 @@ The `StateManager` centralizes user state management, replacing the old global d
 #### Example 1: Basic State Management
 
 ```python
-from src.utils.state_manager import StateManager
+from src.utils.state_manager import UserStateManager
 
 # Initialize the manager
-state_manager = StateManager()
+state_manager = UserStateManager()
 
 # Set user state
 state_manager.set_user_task(
     user_id=123456,
-    task_data={
-        "title": "Buy groceries",
-        "due_date": "2025-10-05",
-        "created_at": "2025-10-03T10:30:00"
-    }
+    task_id="outlook_task_123",
+    task_title="Buy groceries",
+    due_date="2025-10-05"
 )
 
 # Check if user has pending state
@@ -218,11 +216,11 @@ state_manager.clear_user_task(123456)
 #### Example 2: State-Based Conversation Flow
 
 ```python
-from src.utils.state_manager import StateManager
+from src.utils.state_manager import UserStateManager
 from telegram import Update
 from telegram.ext import ContextTypes
 
-state_manager = StateManager()
+state_manager = UserStateManager()
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle user messages with state awareness."""
@@ -234,27 +232,31 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         task_data = state_manager.get_user_task(user_id)
         
         # User is providing additional details
-        if "waiting_for" in task_data:
-            if task_data["waiting_for"] == "due_date":
-                # User is providing the due date
-                task_data["due_date"] = text
-                task_data["waiting_for"] = "confirmation"
-                state_manager.set_user_task(user_id, task_data)
-                
-                await update.message.reply_text(
-                    f"Task: {task_data['title']}\n"
-                    f"Due: {task_data['due_date']}\n\n"
-                    "Reply 'confirm' to create or 'cancel' to abort."
-                )
-            elif task_data["waiting_for"] == "confirmation":
-                if text.lower() == "confirm":
-                    # Create the task
-                    # ... task creation logic ...
-                    state_manager.clear_user_task(user_id)
-                    await update.message.reply_text("Task created!")
-                else:
-                    state_manager.clear_user_task(user_id)
-                    await update.message.reply_text("Task creation cancelled.")
+        # Note: Custom metadata should be stored in task_data dict
+        if task_data.get("waiting_for") == "due_date":
+            # User is providing the due date
+            # Update by setting new task with updated info
+            state_manager.set_user_task(
+                user_id=user_id,
+                task_id=task_data.get('task_id', 'temp'),
+                task_title=task_data['title'],
+                due_date=text  # User's new input
+            )
+            
+            await update.message.reply_text(
+                f"Task: {task_data['title']}\n"
+                f"Due: {text}\n\n"
+                "Reply 'confirm' to create or 'cancel' to abort."
+            )
+        elif task_data.get("waiting_for") == "confirmation":
+            if text.lower() == "confirm":
+                # Create the task
+                # ... task creation logic ...
+                state_manager.clear_user_task(user_id)
+                await update.message.reply_text("Task created!")
+            else:
+                state_manager.clear_user_task(user_id)
+                await update.message.reply_text("Task creation cancelled.")
     else:
         # Normal message handling
         await update.message.reply_text("How can I help you?")
@@ -263,12 +265,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 #### Example 3: Complex State Management
 
 ```python
-from src.utils.state_manager import StateManager
+from src.utils.state_manager import UserStateManager
 from datetime import datetime
 
 def manage_multi_step_task_creation(user_id: int, step: str, data: dict):
     """Manage a multi-step task creation process."""
-    state_manager = StateManager()
+    state_manager = UserStateManager()
     
     # Get current state or initialize
     if state_manager.has_user_task(user_id):
@@ -277,22 +279,34 @@ def manage_multi_step_task_creation(user_id: int, step: str, data: dict):
         task_data = {
             "step": "title",
             "started_at": datetime.now().isoformat(),
-            "data": {}
+            "title": "",
+            "due_date": None,
+            "task_id": "temp"
         }
     
     # Update based on current step
     if step == "title":
-        task_data["data"]["title"] = data["title"]
+        task_data["title"] = data["title"]
         task_data["step"] = "due_date"
+        state_manager.set_user_task(
+            user_id=user_id,
+            task_id=task_data["task_id"],
+            task_title=task_data["title"],
+            due_date=task_data.get("due_date")
+        )
     elif step == "due_date":
-        task_data["data"]["due_date"] = data["due_date"]
+        task_data["due_date"] = data["due_date"]
         task_data["step"] = "priority"
+        state_manager.set_user_task(
+            user_id=user_id,
+            task_id=task_data["task_id"],
+            task_title=task_data["title"],
+            due_date=task_data["due_date"]
+        )
     elif step == "priority":
-        task_data["data"]["priority"] = data["priority"]
+        # Note: Priority is not stored in StateManager
+        # Would need to be handled separately or in a custom field
         task_data["step"] = "complete"
-    
-    # Save state
-    state_manager.set_user_task(user_id, task_data)
     
     return task_data
 ```
@@ -303,6 +317,8 @@ def manage_multi_step_task_creation(user_id: int, step: str, data: dict):
 
 The `TokenManager` handles access token lifecycle management, replacing the global token variable.
 
+**Note**: TokenManager is a global single-user token store, not per-user. For multi-user bots, you'd need a different approach.
+
 #### Example 1: Basic Token Management
 
 ```python
@@ -311,52 +327,55 @@ from src.utils.token_manager import TokenManager
 # Initialize the manager
 token_manager = TokenManager()
 
-# Store a token
-token_manager.set_token(
-    user_id=123456,
-    access_token="eyJ0eXAiOiJKV1QiLCJub25jZSI6..."
-)
+# Store a token (global for the bot, not per-user)
+token_manager.set_token("eyJ0eXAiOiJKV1QiLCJub25jZSI6...")
 
-# Check if user has a valid token
-if token_manager.has_token(123456):
-    token = token_manager.get_token(123456)
-    print(f"User has valid token: {token[:20]}...")
+# Check if there's a valid token
+if token_manager.has_token():
+    token = token_manager.get_token()
+    print(f"Token available: {token[:20]}...")
 else:
-    print("User needs to authenticate")
+    print("No token found - user needs to authenticate")
 ```
 
 #### Example 2: Token Expiration Handling
 
 ```python
 from src.utils.token_manager import TokenManager
-from datetime import datetime, timedelta
+from datetime import timedelta
 
-def check_token_validity(user_id: int) -> dict:
-    """Check if user's token is valid and not expired."""
+def check_token_validity() -> dict:
+    """Check if the token is valid and not expired."""
     token_manager = TokenManager()
     
-    if not token_manager.has_token(user_id):
+    if not token_manager.has_token():
         return {
             "valid": False,
-            "reason": "No token found. Please authenticate with /login."
+            "reason": "No token found. Please authenticate with /connectoutlook."
         }
     
     # Get token age
-    token_age = token_manager.get_token_age(user_id)
+    token_age = token_manager.get_token_age()
     
-    # Tokens typically expire after 1 hour
-    if token_age > timedelta(hours=1):
+    if token_age is None:
         return {
             "valid": False,
-            "reason": "Token expired. Please re-authenticate with /login.",
-            "age": str(token_age)
+            "reason": "Token age unknown"
+        }
+    
+    # Tokens typically expire after 1 hour
+    if token_age > 3600:  # 3600 seconds = 1 hour
+        return {
+            "valid": False,
+            "reason": "Token expired. Please re-authenticate with /connectoutlook.",
+            "age_seconds": token_age
         }
     
     # Token is valid
     return {
         "valid": True,
-        "token": token_manager.get_token(user_id),
-        "age": str(token_age)
+        "token": token_manager.get_token(),
+        "age_seconds": token_age
     }
 ```
 
@@ -365,28 +384,30 @@ def check_token_validity(user_id: int) -> dict:
 ```python
 from src.utils.token_manager import TokenManager
 
-async def show_token_status(user_id: int) -> str:
+async def show_token_status() -> str:
     """Generate a user-friendly token status message."""
     token_manager = TokenManager()
     
-    if not token_manager.has_token(user_id):
-        return "❌ Not authenticated. Use /login to authenticate."
+    if not token_manager.has_token():
+        return "❌ Not authenticated. Use /connectoutlook to authenticate."
     
-    token_info = token_manager.get_token_info(user_id)
-    token_age = token_manager.get_token_age(user_id)
+    token_info = token_manager.get_token_info()
+    token_age = token_manager.get_token_age()
+    
+    if token_age is None:
+        return "⚠️ Token status unknown."
     
     # Calculate time remaining (assuming 1 hour expiry)
-    time_remaining = timedelta(hours=1) - token_age
+    time_remaining_seconds = 3600 - token_age
     
-    if time_remaining.total_seconds() <= 0:
-        return "⚠️ Token expired. Please use /login to re-authenticate."
+    if time_remaining_seconds <= 0:
+        return "⚠️ Token expired. Please use /connectoutlook to re-authenticate."
     
-    minutes_remaining = int(time_remaining.total_seconds() / 60)
+    minutes_remaining = int(time_remaining_seconds / 60)
     
     return (
         f"✅ Authenticated\n"
-        f"User ID: {token_info['user_id']}\n"
-        f"Token Age: {token_age}\n"
+        f"Token Age: {int(token_age)} seconds\n"
         f"Time Remaining: ~{minutes_remaining} minutes"
     )
 ```
@@ -401,17 +422,31 @@ The `LLMService` provides AI-powered task parsing and natural language understan
 
 ```python
 from src.services.llm_service import LLMService
+from datetime import datetime
+import pytz
 
 # Initialize the service
-llm_service = LLMService()
+from src.config.settings import config
+llm_service = LLMService(config.gemini_api_key, config.gemini_model_name)
 
 # Parse a natural language task
 user_message = "Remind me to call mom tomorrow at 3pm"
 
 try:
-    parsed_task = llm_service.parse_task(user_message)
-    print(f"Title: {parsed_task['title']}")
-    print(f"Due Date: {parsed_task['due_date']}")
+    # Get current date for context
+    malaysia_tz = pytz.timezone('Asia/Kuala_Lumpur')
+    current_date = datetime.now(malaysia_tz)
+    
+    # Analyze the task request
+    task_intent = llm_service.analyze_task_request(
+        user_message=user_message,
+        current_date=current_date,
+        last_task_context=None
+    )
+    
+    print(f"Intent: {task_intent.intent}")
+    print(f"Summary: {task_intent.summary}")
+    print(f"Due Date: {task_intent.due_date}")
 except Exception as e:
     print(f"Failed to parse task: {e}")
 ```
@@ -421,36 +456,52 @@ except Exception as e:
 ```python
 from src.services.llm_service import LLMService
 from src.validators.task_validator import TaskValidator
+from src.formatters.date_formatter import validate_and_process_date
 from datetime import datetime
+import pytz
 
 def parse_and_validate_task(user_message: str):
     """Parse user message and validate the resulting task."""
-    llm_service = LLMService()
+    from src.config.settings import config
+    llm_service = LLMService(config.gemini_api_key, config.gemini_model_name)
     validator = TaskValidator()
     
     try:
-        # Parse the task
-        parsed_task = llm_service.parse_task(user_message)
+        # Get current date for LLM context
+        malaysia_tz = pytz.timezone('Asia/Kuala_Lumpur')
+        current_date = datetime.now(malaysia_tz)
         
-        # Validate title
-        title_validation = validator.validate_title(parsed_task["title"])
-        if not title_validation["valid"]:
+        # Parse the task using LLM
+        task_intent = llm_service.analyze_task_request(
+            user_message=user_message,
+            current_date=current_date,
+            last_task_context=None
+        )
+        
+        # Validate summary
+        summary_validation = validator.validate_summary(task_intent.summary)
+        if not summary_validation.is_valid:
             return {
                 "success": False,
-                "error": f"Invalid title: {title_validation['error']}"
+                "error": f"Invalid summary: {summary_validation.message}"
             }
         
-        # Validate date
-        date_validation = validator.validate_date(parsed_task["due_date"])
-        if not date_validation["valid"]:
-            return {
-                "success": False,
-                "error": f"Invalid date: {date_validation['error']}"
-            }
+        # Validate date (if provided)
+        if task_intent.due_date:
+            validated_date = validate_and_process_date(task_intent.due_date)
+            if not validated_date:
+                return {
+                    "success": False,
+                    "error": "Invalid date format"
+                }
         
         return {
             "success": True,
-            "task": parsed_task
+            "task": {
+                "intent": task_intent.intent,
+                "summary": task_intent.summary,
+                "due_date": task_intent.due_date
+            }
         }
     except Exception as e:
         return {
@@ -463,28 +514,43 @@ def parse_and_validate_task(user_message: str):
 
 ```python
 from src.services.llm_service import LLMService
-from src.utils.state_manager import StateManager
+from src.utils.state_manager import UserStateManager
+from datetime import datetime
+import pytz
 
 def parse_with_context(user_id: int, message: str):
     """Parse task with user context from previous interactions."""
-    llm_service = LLMService()
-    state_manager = StateManager()
+    from src.config.settings import config
+    llm_service = LLMService(config.gemini_api_key, config.gemini_model_name)
+    state_manager = UserStateManager()
+    
+    # Get current date
+    malaysia_tz = pytz.timezone('Asia/Kuala_Lumpur')
+    current_date = datetime.now(malaysia_tz)
     
     # Build context from previous interactions
-    context = ""
+    last_task_context = None
     if state_manager.has_user_task(user_id):
         previous_task = state_manager.get_user_task(user_id)
-        context = f"Previous task: {previous_task.get('title', 'N/A')}"
-    
-    # Enhanced prompt with context
-    enhanced_message = f"{context}\n\nCurrent request: {message}"
+        last_task_context = {
+            'title': previous_task.get('title', 'N/A'),
+            'due_date': previous_task.get('due_date')
+        }
     
     try:
-        parsed_task = llm_service.parse_task(enhanced_message)
+        task_intent = llm_service.analyze_task_request(
+            user_message=message,
+            current_date=current_date,
+            last_task_context=last_task_context
+        )
         return {
             "success": True,
-            "task": parsed_task,
-            "context_used": bool(context)
+            "task": {
+                "intent": task_intent.intent,
+                "summary": task_intent.summary,
+                "due_date": task_intent.due_date
+            },
+            "context_used": bool(last_task_context)
         }
     except Exception as e:
         return {
@@ -509,25 +575,25 @@ from src.config.settings import Settings
 import msal
 
 async def login_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /login command - complete authentication flow."""
-    user_id = update.effective_user.id
+    """Handle /connectoutlook command - complete authentication flow."""
     token_manager = TokenManager()
-    settings = Settings()
+    from src.config.settings import config
+    import msal
     
     # Check if already authenticated
-    if token_manager.has_token(user_id):
-        token_age = token_manager.get_token_age(user_id)
+    if token_manager.has_token():
+        token_age = token_manager.get_token_age()
         await update.message.reply_text(
             f"✅ Already authenticated!\n"
-            f"Token age: {token_age}\n\n"
+            f"Token age: {int(token_age)} seconds\n\n"
             f"Use /logout to sign out."
         )
         return
     
     # Build MSAL authentication URL
     app = msal.PublicClientApplication(
-        settings.AZURE_CLIENT_ID,
-        authority=f"https://login.microsoftonline.com/{settings.AZURE_TENANT_ID}"
+        config.ms_client_id,
+        authority=f"https://login.microsoftonline.com/{config.ms_tenant_id}"
     )
     
     flow = app.initiate_device_flow(scopes=["Tasks.ReadWrite"])
@@ -559,8 +625,8 @@ async def login_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result = app.acquire_token_by_device_flow(flow)
     
     if "access_token" in result:
-        # Store the token
-        token_manager.set_token(user_id, result["access_token"])
+        # Store the token (global, not per-user)
+        token_manager.set_token(result["access_token"])
         
         await update.message.reply_text(
             "✅ **Authentication Successful!**\n\n"
@@ -584,9 +650,10 @@ from telegram.ext import ContextTypes
 from src.services.llm_service import LLMService
 from src.services.outlook_service import OutlookService
 from src.utils.token_manager import TokenManager
-from src.utils.state_manager import StateManager
+from src.utils.state_manager import UserStateManager
 from src.validators.task_validator import TaskValidator
-from src.formatters.task_formatter import TaskFormatter
+from datetime import datetime
+import pytz
 
 async def handle_task_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Complete task creation flow from user message."""
@@ -594,23 +661,39 @@ async def handle_task_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     message_text = update.message.text
     
     # Initialize services
-    llm_service = LLMService()
+    from src.config.settings import config
+    llm_service = LLMService(config.gemini_api_key, config.gemini_model_name)
     outlook_service = OutlookService()
     token_manager = TokenManager()
-    state_manager = StateManager()
+    state_manager = UserStateManager()
     validator = TaskValidator()
-    formatter = TaskFormatter()
     
     # Step 1: Check authentication
-    if not token_manager.has_token(user_id):
+    if not token_manager.has_token():
         await update.message.reply_text(
-            "❌ Please authenticate first using /login"
+            "❌ Please authenticate first using /connectoutlook"
         )
         return
     
     # Step 2: Parse the task using LLM
     try:
-        parsed_task = llm_service.parse_task(message_text)
+        malaysia_tz = pytz.timezone('Asia/Kuala_Lumpur')
+        current_date = datetime.now(malaysia_tz)
+        
+        # Get last task context
+        last_task_context = None
+        if state_manager.has_user_task(user_id):
+            last_task = state_manager.get_user_task(user_id)
+            last_task_context = {
+                'title': last_task['title'],
+                'due_date': last_task.get('due_date')
+            }
+        
+        task_intent = llm_service.analyze_task_request(
+            user_message=message_text,
+            current_date=current_date,
+            last_task_context=last_task_context
+        )
     except Exception as e:
         await update.message.reply_text(
             f"❌ Couldn't understand your request: {e}\n\n"
@@ -619,38 +702,24 @@ async def handle_task_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     
     # Step 3: Validate the parsed task
-    title_validation = validator.validate_title(parsed_task["title"])
-    if not title_validation["valid"]:
+    summary_validation = validator.validate_summary(task_intent.summary)
+    if not summary_validation.is_valid:
         await update.message.reply_text(
-            f"❌ Invalid task title: {title_validation['error']}"
+            f"❌ Invalid task summary: {summary_validation.message}"
         )
         return
     
-    date_validation = validator.validate_date(parsed_task["due_date"])
-    if not date_validation["valid"]:
-        await update.message.reply_text(
-            f"❌ Invalid due date: {date_validation['error']}"
-        )
-        return
-    
-    # Step 4: Store state for confirmation
-    state_manager.set_user_task(user_id, {
-        "title": parsed_task["title"],
-        "due_date": parsed_task["due_date"],
-        "original_message": message_text,
-        "waiting_for": "confirmation"
-    })
-    
-    # Step 5: Show formatted preview
-    formatted = formatter.format_task_preview({
-        "title": parsed_task["title"],
-        "dueDateTime": {"dateTime": parsed_task["due_date"]}
-    })
-    
-    await update.message.reply_text(
-        f"{formatted}\n\n"
+    # Step 4: Show preview (simplified - actual implementation would store for confirmation)
+    preview_message = (
+        f"📋 **Task Preview**\n\n"
+        f"Title: {task_intent.summary}\n"
+        f"Due: {task_intent.due_date or 'No due date'}\n\n"
         "Reply 'yes' to create or 'no' to cancel."
     )
+    
+    await update.message.reply_text(preview_message)
+    
+    # Note: Actual confirmation handling would be in a separate handler
 
 async def handle_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle task creation confirmation."""
@@ -660,7 +729,7 @@ async def handle_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Initialize services
     outlook_service = OutlookService()
     token_manager = TokenManager()
-    state_manager = StateManager()
+    state_manager = UserStateManager()
     
     # Check if user has pending task
     if not state_manager.has_user_task(user_id):
@@ -668,18 +737,18 @@ async def handle_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     task_data = state_manager.get_user_task(user_id)
     
-    if task_data.get("waiting_for") != "confirmation":
-        return  # Not waiting for confirmation
+    # Note: In real implementation, you'd check custom metadata for "waiting_for"
+    # StateManager only stores task_id, title, due_date
     
     if confirmation in ["yes", "y", "confirm", "ok"]:
         # Step 6: Create the task in Outlook
-        access_token = token_manager.get_token(user_id)
+        access_token = token_manager.get_token()
         
         try:
             created_task = outlook_service.create_task(
                 access_token=access_token,
                 title=task_data["title"],
-                due_date=task_data["due_date"]
+                due_date=task_data.get("due_date")
             )
             
             # Clear state
@@ -687,8 +756,8 @@ async def handle_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE
             
             await update.message.reply_text(
                 f"✅ Task created successfully!\n\n"
-                f"Title: {created_task['title']}\n"
-                f"ID: {created_task['id'][:8]}..."
+                f"Title: {created_task.get('title', 'Unknown')}\n"
+                f"ID: {created_task.get('id', 'N/A')[:8]}..."
             )
         except Exception as e:
             await update.message.reply_text(
@@ -713,7 +782,9 @@ from telegram.ext import ContextTypes, MessageHandler, filters
 from src.services.llm_service import LLMService
 from src.services.outlook_service import OutlookService
 from src.utils.token_manager import TokenManager
-from src.utils.state_manager import StateManager
+from src.utils.state_manager import UserStateManager
+from src.utils.token_manager import TokenManager
+from src.services.llm_service import LLMService
 
 async def intelligent_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle messages with intelligent routing based on context."""
@@ -721,9 +792,10 @@ async def intelligent_message_handler(update: Update, context: ContextTypes.DEFA
     text = update.message.text
     
     # Initialize services
-    state_manager = StateManager()
+    from src.config.settings import config
+    state_manager = UserStateManager()
     token_manager = TokenManager()
-    llm_service = LLMService()
+    llm_service = LLMService(config.gemini_api_key, config.gemini_model_name)
     
     # Route 1: User has pending state (multi-step flow)
     if state_manager.has_user_task(user_id):
@@ -731,9 +803,9 @@ async def intelligent_message_handler(update: Update, context: ContextTypes.DEFA
         return
     
     # Route 2: User is not authenticated
-    if not token_manager.has_token(user_id):
+    if not token_manager.has_token():
         await update.message.reply_text(
-            "👋 Welcome! Please use /login to authenticate first."
+            "👋 Welcome! Please use /connectoutlook to authenticate first."
         )
         return
     
@@ -884,7 +956,7 @@ Examples from `src/handlers/message_handlers.py`.
 ```python
 from telegram import Update
 from telegram.ext import ContextTypes
-from src.utils.state_manager import StateManager
+from src.utils.state_manager import UserStateManager
 from src.services.outlook_service import OutlookService
 from src.utils.token_manager import TokenManager
 
@@ -893,19 +965,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text
     
-    state_manager = StateManager()
+    state_manager = UserStateManager()
     
     # Check for pending state
     if state_manager.has_user_task(user_id):
         task_data = state_manager.get_user_task(user_id)
         
-        # Handle different state types
-        if task_data.get("waiting_for") == "due_date":
-            await handle_due_date_input(update, context, task_data)
-        elif task_data.get("waiting_for") == "confirmation":
-            await handle_confirmation(update, context, task_data)
-        elif task_data.get("waiting_for") == "update_choice":
-            await handle_update_choice(update, context, task_data)
+        # Note: StateManager only stores task_id, title, due_date
+        # For "waiting_for" state, you'd need custom metadata storage
+        await handle_stateful_message(update, context, task_data)
     else:
         # New conversation - route based on content
         await route_new_message(update, context)
@@ -917,30 +985,34 @@ async def handle_due_date_input(
 ):
     """Handle user providing a due date."""
     from src.validators.task_validator import TaskValidator
+    from src.formatters.date_formatter import validate_and_process_date
     
     user_id = update.effective_user.id
     date_text = update.message.text
-    state_manager = StateManager()
+    state_manager = UserStateManager()
     validator = TaskValidator()
     
     # Validate the date
-    validation = validator.validate_date(date_text)
+    validated_date = validate_and_process_date(date_text)
     
-    if not validation["valid"]:
+    if not validated_date:
         await update.message.reply_text(
-            f"❌ Invalid date: {validation['error']}\n\n"
+            f"❌ Invalid date format\n\n"
             "Please provide a valid date (e.g., '2025-10-10' or 'tomorrow')"
         )
         return
     
     # Update state with validated date
-    task_data["due_date"] = date_text
-    task_data["waiting_for"] = "confirmation"
-    state_manager.set_user_task(user_id, task_data)
+    state_manager.set_user_task(
+        user_id=user_id,
+        task_id=task_data.get('task_id', 'temp'),
+        task_title=task_data['title'],
+        due_date=validated_date
+    )
     
     await update.message.reply_text(
         f"Task: {task_data['title']}\n"
-        f"Due: {date_text}\n\n"
+        f"Due: {validated_date}\n\n"
         "Reply 'yes' to create or 'no' to cancel."
     )
 ```
@@ -1008,45 +1080,56 @@ class TestOutlookService(unittest.TestCase):
 
 ```python
 import unittest
-from src.utils.state_manager import StateManager
+from src.utils.state_manager import UserStateManager
 
 class TestStateManager(unittest.TestCase):
     def setUp(self):
-        self.manager = StateManager()
+        self.manager = UserStateManager()
         self.user_id = 123456
     
     def test_set_and_get_task(self):
         """Test setting and retrieving task data."""
         # Arrange
-        task_data = {
-            "title": "Test Task",
-            "due_date": "2025-10-10"
-        }
+        task_id = "outlook_task_123"
+        title = "Test Task"
+        due_date = "2025-10-10"
         
         # Act
-        self.manager.set_user_task(self.user_id, task_data)
+        self.manager.set_user_task(
+            user_id=self.user_id,
+            task_id=task_id,
+            task_title=title,
+            due_date=due_date
+        )
         result = self.manager.get_user_task(self.user_id)
         
         # Assert
         self.assertEqual(result["title"], "Test Task")
         self.assertEqual(result["due_date"], "2025-10-10")
+        self.assertEqual(result["task_id"], "outlook_task_123")
     
     def test_has_user_task(self):
         """Test checking if user has task data."""
-        # Arrange
-        task_data = {"title": "Test"}
-        
         # Act & Assert
         self.assertFalse(self.manager.has_user_task(self.user_id))
         
-        self.manager.set_user_task(self.user_id, task_data)
+        self.manager.set_user_task(
+            user_id=self.user_id,
+            task_id="task123",
+            task_title="Test",
+            due_date=None
+        )
         self.assertTrue(self.manager.has_user_task(self.user_id))
     
     def test_clear_user_task(self):
         """Test clearing user task data."""
         # Arrange
-        task_data = {"title": "Test"}
-        self.manager.set_user_task(self.user_id, task_data)
+        self.manager.set_user_task(
+            user_id=self.user_id,
+            task_id="task123",
+            task_title="Test",
+            due_date=None
+        )
         
         # Act
         self.manager.clear_user_task(self.user_id)

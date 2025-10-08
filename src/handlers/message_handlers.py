@@ -9,7 +9,6 @@ This module handles:
 """
 
 import logging
-import json
 from datetime import datetime
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -100,8 +99,41 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
+        # STEP 1: Validate input relevance BEFORE sending to LLM
+        relevance_check = task_validator.validate_input_relevance(user_message)
+        logger.info(f"Relevance check - Task-related: {relevance_check.is_task_related}, "
+                   f"Category: {relevance_check.detected_category}, "
+                   f"Confidence: {relevance_check.confidence:.2f}")
+        
+        if not relevance_check.is_task_related:
+            # Input is not task-related - provide helpful feedback
+            category_responses = {
+                "greeting": "👋 Hello! I'm a task management bot. To create a task, tell me what you need to do.\n\n"
+                           "Examples:\n• 'Buy groceries tomorrow'\n• 'Call dentist on Friday'\n• 'Submit report by Dec 15'",
+                
+                "question": "🤔 I'm a task management bot, not a Q&A assistant. I can help you create and manage tasks in Outlook.\n\n"
+                           "To create a task, describe what you need to do:\n• 'Prepare presentation for Monday'\n• 'Pay bills by end of week'",
+                
+                "irrelevant": "💬 I didn't detect a task in your message. I specialize in creating Outlook tasks.\n\n"
+                             "Try telling me something you need to do:\n• 'Schedule meeting with team'\n• 'Review project documents tomorrow'",
+                
+                "unclear": "🤷 I'm not sure what you want me to do. I help create tasks in Outlook.\n\n"
+                          "Please describe a specific task:\n• 'Book flight for next month'\n• 'Finish homework by Wednesday'"
+            }
+            
+            response = category_responses.get(
+                relevance_check.detected_category,
+                "ℹ️ I'm a task management bot. Tell me what you need to do and I'll create an Outlook task.\n\n"
+                "Examples:\n• 'Buy milk and eggs'\n• 'Complete project proposal tomorrow'"
+            )
+            
+            await update.message.reply_text(response)
+            logger.info(f"Rejected non-task input. Category: {relevance_check.detected_category}, Reason: {relevance_check.reason}")
+            return
+        
+        # STEP 2: Input is task-related - proceed with LLM analysis
         # Get current date for LLM context
-        current_date = datetime.now(MALAYSIA_TZ).strftime("%Y-%m-%d")
+        current_date = datetime.now(MALAYSIA_TZ)
         
         # Get user's last task for update context from StateManager
         last_task = state_manager.get_user_task(user_id)

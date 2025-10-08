@@ -249,7 +249,6 @@ The bot uses a clean service layer pattern for better maintainability and testab
 - Wraps all `outlook_api` exceptions
 - Provides detailed logging
 - Consistent error messages
-- Automatic retries for network issues (3 attempts)
 
 **Example Usage**:
 ```python
@@ -288,9 +287,10 @@ tasks = outlook_service.get_uncompleted_tasks(
 **Class**: `UserStateManager`
 
 **Methods**:
-- `set_user_task(user_id: int, task_id: str, title: str, due_date: str | None)` → None
+- `set_user_task(user_id: int, task_id: str, task_title: str, due_date: str | None)` → None
   - Stores user's last created task
   - Used for due date updates without specifying task ID
+  - **Note**: Parameter is `task_title`, not `title`
   
 - `get_user_task(user_id: int)` → dict | None
   - Retrieves user's last task info
@@ -328,11 +328,11 @@ from utils import UserStateManager
 
 state_manager = UserStateManager()
 
-# Store user's last task
+# Store user's last task (note: parameter is task_title, not title)
 state_manager.set_user_task(
     user_id=123456,
     task_id="AAMkAG...",
-    title="Buy groceries",
+    task_title="Buy groceries",
     due_date="2025-10-05"
 )
 
@@ -426,35 +426,45 @@ else:
 **Class**: `LLMService`
 
 **Methods**:
-- `analyze_task_request(user_message: str, current_date: str, last_task_context: dict | None)` → TaskIntent
+- `analyze_task_request(user_message: str, current_date: datetime, last_task_context: dict | None)` → TaskIntent
   - Analyzes user message
   - Extracts intent, task summary, due date
   - Returns `TaskIntent` dataclass
+  - **Note**: `current_date` is a `datetime` object, not a string
 
 **TaskIntent Dataclass**:
 ```python
 @dataclass
 class TaskIntent:
-    intent: str        # "create_task", "update_due_date", or "unknown"
-    summary: str       # Task summary (3-12 words)
-    due_date: str      # Due date in various formats
+    intent: str              # "create_task", "update_due_date", or "unknown"
+    summary: str             # Task summary (3-12 words for create_task)
+    due_date: str | None     # Due date in YYYY-MM-DD format or None
+    confidence: float = 1.0  # Confidence score (0.0-1.0)
+    raw_response: str = ""   # Original LLM response for debugging
 ```
 
 **Example Usage**:
 ```python
 from services import LLMService
+from datetime import datetime
+import pytz
 
 llm_service = LLMService(api_key, model_name)
 
+# Get current date as datetime object
+malaysia_tz = pytz.timezone('Asia/Kuala_Lumpur')
+current_date = datetime.now(malaysia_tz)
+
 intent = llm_service.analyze_task_request(
     user_message="Buy groceries tomorrow",
-    current_date="2025-10-03",
+    current_date=current_date,  # datetime object, not string!
     last_task_context=None
 )
 
-print(intent.intent)    # "create_task"
-print(intent.summary)   # "Buy groceries"
-print(intent.due_date)  # "tomorrow"
+print(intent.intent)      # "create_task"
+print(intent.summary)     # "Buy groceries tomorrow"
+print(intent.due_date)    # "2025-10-07" (or None)
+print(intent.confidence)  # 1.0
 ```
 
 **See Also**: [LLMService Examples](EXAMPLES.md#llmservice)

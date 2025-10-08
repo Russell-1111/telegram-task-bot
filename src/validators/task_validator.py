@@ -28,6 +28,23 @@ class ValidationResult:
     validated_value: str
 
 
+@dataclass
+class RelevanceValidationResult:
+    """
+    Result of input relevance validation
+    
+    Attributes:
+        is_task_related: Whether the input appears to be task-related
+        confidence: Confidence score (0.0-1.0)
+        reason: Explanation for the classification
+        detected_category: Category of input (task, greeting, question, random, etc.)
+    """
+    is_task_related: bool
+    confidence: float
+    reason: str
+    detected_category: str
+
+
 class TaskValidator:
     """
     Validates task summaries and related data.
@@ -56,6 +73,44 @@ class TaskValidator:
         'please remind me to', 'task:', 'todo:', 'remember to'
     ]
     
+    # Task-related action verbs and keywords
+    TASK_ACTION_VERBS = {
+        'buy', 'call', 'email', 'send', 'write', 'read', 'finish', 'complete',
+        'submit', 'prepare', 'schedule', 'book', 'reserve', 'pay', 'order',
+        'clean', 'organize', 'fix', 'repair', 'update', 'review', 'check',
+        'create', 'make', 'build', 'develop', 'plan', 'attend', 'meet',
+        'visit', 'contact', 'follow', 'research', 'study', 'practice',
+        'cancel', 'renew', 'confirm', 'register', 'sign', 'file', 'draft',
+        'remind', 'remember', 'pickup', 'deliver', 'ship', 'return'
+    }
+    
+    # Task-related keywords that indicate task intent
+    TASK_KEYWORDS = {
+        'task', 'todo', 'reminder', 'appointment', 'meeting', 'deadline',
+        'due', 'tomorrow', 'today', 'tonight', 'later', 'next', 'week',
+        'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'
+    }
+    
+    # Greeting patterns
+    GREETING_PATTERNS = {
+        'hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening',
+        'good night', 'greetings', 'howdy', 'sup', 'yo', 'hola', 'bonjour'
+    }
+    
+    # Question patterns
+    QUESTION_PATTERNS = {
+        'how are you', 'what is', 'what are', 'who is', 'who are', 'when is',
+        'where is', 'why is', 'can you', 'could you', 'would you', 'will you',
+        'do you', 'does', 'did you', 'have you', 'has', 'should i', 'tell me'
+    }
+    
+    # Random/irrelevant patterns
+    IRRELEVANT_PATTERNS = {
+        'lol', 'lmao', 'haha', 'wow', 'cool', 'nice', 'ok', 'okay', 'yes', 'no',
+        'thanks', 'thank you', 'bye', 'goodbye', 'see you', 'later', 'nevermind',
+        'never mind', 'just kidding', 'jk', 'test', 'testing', 'hmm', 'uh', 'um'
+    }
+    
     def __init__(self, min_words: int = 3, max_words: int = 12):
         """
         Initialize the validator with word count limits
@@ -72,6 +127,129 @@ class TaskValidator:
         self.min_words = min_words
         self.max_words = max_words
         self.stop_words = self.DEFAULT_STOP_WORDS.copy()
+    
+    def validate_input_relevance(self, user_input: str) -> RelevanceValidationResult:
+        """
+        Validate whether user input is task-related or irrelevant.
+        
+        This method uses keyword matching and pattern recognition to determine
+        if the user's message describes an actual task vs. greetings, questions,
+        or random comments.
+        
+        Args:
+            user_input: The user's message to validate
+            
+        Returns:
+            RelevanceValidationResult with classification details
+        
+        Examples:
+            >>> validator.validate_input_relevance("Buy groceries tomorrow")
+            RelevanceValidationResult(is_task_related=True, confidence=0.9, ...)
+            
+            >>> validator.validate_input_relevance("Hello, how are you?")
+            RelevanceValidationResult(is_task_related=False, confidence=0.9, ...)
+        """
+        if not user_input or not isinstance(user_input, str):
+            return RelevanceValidationResult(
+                is_task_related=False,
+                confidence=1.0,
+                reason="Empty or invalid input",
+                detected_category="invalid"
+            )
+        
+        cleaned_input = user_input.strip().lower()
+        words = cleaned_input.split()
+        
+        # Check for very short inputs (likely greetings or exclamations)
+        if len(words) <= 2:
+            # Check if it's a greeting
+            if any(greeting in cleaned_input for greeting in self.GREETING_PATTERNS):
+                return RelevanceValidationResult(
+                    is_task_related=False,
+                    confidence=0.95,
+                    reason="Input is a greeting",
+                    detected_category="greeting"
+                )
+            
+            # Check if it's an irrelevant pattern
+            if any(pattern in cleaned_input for pattern in self.IRRELEVANT_PATTERNS):
+                return RelevanceValidationResult(
+                    is_task_related=False,
+                    confidence=0.9,
+                    reason="Input is a common irrelevant phrase",
+                    detected_category="irrelevant"
+                )
+        
+        # Score-based detection
+        task_score = 0.0
+        reasons = []
+        
+        # Check for task action verbs (strong indicator)
+        action_verbs_found = [word for word in words if word in self.TASK_ACTION_VERBS]
+        if action_verbs_found:
+            task_score += 0.4
+            reasons.append(f"Contains action verbs: {', '.join(action_verbs_found)}")
+        
+        # Check for task keywords
+        task_keywords_found = [word for word in words if word in self.TASK_KEYWORDS]
+        if task_keywords_found:
+            task_score += 0.3
+            reasons.append(f"Contains task keywords: {', '.join(task_keywords_found)}")
+        
+        # Check for task prefixes (strong indicator)
+        for prefix in self.TASK_PREFIXES:
+            if cleaned_input.startswith(prefix):
+                task_score += 0.5
+                reasons.append(f"Starts with task prefix: '{prefix}'")
+                break
+        
+        # Check for greetings (negative indicator)
+        greetings_found = [g for g in self.GREETING_PATTERNS if g in cleaned_input]
+        if greetings_found:
+            task_score -= 0.5
+            reasons.append(f"Contains greeting: {', '.join(greetings_found)}")
+        
+        # Check for question patterns (negative indicator)
+        questions_found = [q for q in self.QUESTION_PATTERNS if q in cleaned_input]
+        if questions_found:
+            task_score -= 0.4
+            reasons.append(f"Contains question pattern: {', '.join(questions_found)}")
+        
+        # Check if it ends with a question mark
+        if user_input.strip().endswith('?'):
+            task_score -= 0.3
+            reasons.append("Ends with question mark")
+        
+        # Check for irrelevant patterns (negative indicator)
+        irrelevant_found = [p for p in self.IRRELEVANT_PATTERNS if p in cleaned_input]
+        if irrelevant_found:
+            task_score -= 0.3
+            reasons.append(f"Contains irrelevant pattern: {', '.join(irrelevant_found)}")
+        
+        # Determine classification
+        is_task_related = task_score > 0.2
+        confidence = min(abs(task_score), 1.0)
+        
+        # Determine category
+        if task_score > 0.2:
+            detected_category = "task"
+        elif greetings_found:
+            detected_category = "greeting"
+        elif questions_found or user_input.strip().endswith('?'):
+            detected_category = "question"
+        elif irrelevant_found:
+            detected_category = "irrelevant"
+        else:
+            detected_category = "unclear"
+        
+        reason_text = "; ".join(reasons) if reasons else "No clear indicators found"
+        
+        return RelevanceValidationResult(
+            is_task_related=is_task_related,
+            confidence=confidence,
+            reason=reason_text,
+            detected_category=detected_category
+        )
     
     def validate_summary(self, summary: str) -> ValidationResult:
         """
@@ -191,25 +369,3 @@ class TaskValidator:
                 meaningful_words.append(word.strip('.,!?;:'))
         
         return meaningful_words
-    
-    def test_validation(self):
-        """
-        Test function to verify summary validation works correctly.
-        Useful for development and debugging.
-        """
-        test_cases = [
-            ("Buy groceries", False, "Too short (2 words)"),
-            ("Buy groceries and milk", True, "Valid (4 words)"),
-            ("Call mom about dinner plans tonight", True, "Valid (6 words)"),
-            ("This is a very very long task summary that exceeds the maximum", False, "Too long"),
-            ("", False, "Empty string"),
-        ]
-        
-        logger.info("Running validation tests...")
-        
-        for summary, expected_valid, description in test_cases:
-            result = self.validate_summary(summary)
-            status = "✅" if result.is_valid == expected_valid else "❌"
-            logger.info(f"{status} {description}: '{summary}' -> {result.message}")
-        
-        logger.info("Validation tests complete")
