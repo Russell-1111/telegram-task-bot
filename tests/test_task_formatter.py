@@ -165,6 +165,6 @@ class TestTaskFormatter:
         }
         result = format_task_for_display(task, 1)
         
-        # Should preserve the special characters
-        assert '*asterisks*' in result
-        assert '_underscores_' in result
+        # Should escape special characters to prevent Telegram parsing errors
+        assert '\\*asterisks\\*' in result
+        assert '\\_underscores\\_' in result

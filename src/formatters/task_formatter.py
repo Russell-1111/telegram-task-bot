@@ -11,11 +11,42 @@ import logging
 import random
 from datetime import datetime
 import pytz
+import re
 
 logger = logging.getLogger(__name__)
 
 # Malaysia timezone for consistent date handling
 MALAYSIA_TZ = pytz.timezone('Asia/Kuala_Lumpur')
+
+
+def escape_markdown(text):
+    """
+    Escape special characters for Telegram Markdown.
+    
+    In Telegram Markdown, certain characters need to be escaped with a backslash
+    to prevent parsing errors. This function handles: _ * [ ] ( ) ~ ` > # + - = | { } . !
+    
+    Args:
+        text (str): Text to escape
+    
+    Returns:
+        str: Escaped text safe for Telegram Markdown
+    
+    Example:
+        >>> escape_markdown("Task_with_underscores")
+        'Task\\_with\\_underscores'
+    """
+    if not text:
+        return text
+    
+    # Characters that need escaping in Telegram Markdown
+    escape_chars = r'_*[]()~`>#+-=|{}.!'
+    
+    # Escape each special character
+    for char in escape_chars:
+        text = text.replace(char, '\\' + char)
+    
+    return text
 
 
 def format_task_for_display(task, index):
@@ -50,8 +81,10 @@ def format_task_for_display(task, index):
         '1. **Complete project proposal** - 📅 Due Dec 31 ⚡ **High Priority**'
     """
     try:
-        # Get task title
+        # Get task title and escape special characters
         title = task.get('title', 'Untitled Task')
+        # Escape markdown special characters to prevent parsing errors
+        escaped_title = escape_markdown(title)
         
         # Format due date if available
         due_date_str = ""
@@ -89,13 +122,15 @@ def format_task_for_display(task, index):
             priority_str = " 🔽 Low Priority"
         
         # Format the complete task line
-        formatted_task = f"{index}. **{title}**{due_date_str}{priority_str}"
+        formatted_task = f"{index}. **{escaped_title}**{due_date_str}{priority_str}"
         
         return formatted_task
         
     except Exception as e:
         logger.error(f"Error formatting task for display: {e}")
-        return f"{index}. {task.get('title', 'Untitled Task')}"
+        # Return safely escaped version on error
+        safe_title = escape_markdown(task.get('title', 'Untitled Task'))
+        return f"{index}. {safe_title}"
 
 
 def format_tasks_list(tasks):
