@@ -335,13 +335,12 @@ See [`docs/PHASE1-SUMMARY.md`](docs/PHASE1-SUMMARY.md), [`docs/PHASE2-SUMMARY.md
 
 ### Automated Testing
 ```bash
-# Run test suite (if configured)
-python -m pytest tests/
+# Run full test suite
+python -m pytest tests/ -v
 
 # Run specific test modules
-python test_api_doc.py
-python test_examples.py
-python test_fixes.py
+python -m pytest tests/test_api_documentation.py
+python -m pytest tests/test_documentation_examples.py
 ```
 
 ### Testing Checklist
@@ -511,7 +510,7 @@ A: Currently, `/mytasks` only shows uncompleted tasks. You can extend `OutlookSe
 ### Development Questions
 
 **Q: How do I run the tests?**  
-A: Run `python test_api_doc.py`, `python test_examples.py`, or `python test_fixes.py`. For a full test suite, install pytest and run `pytest tests/`.
+A: Run `python -m pytest tests/ -v` for the full test suite, or test specific modules with `python -m pytest tests/test_<module>.py`.
 
 **Q: Where should I add new features?**  
 A: Follow the service layer architecture:
