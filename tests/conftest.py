@@ -47,6 +47,14 @@ def mock_telegram_context():
 @pytest.fixture
 def sample_outlook_task():
     """Create a sample Outlook task for testing"""
+    # Use a future date to ensure task is not overdue during testing
+    from datetime import datetime, timedelta
+    import pytz
+    
+    # Calculate a date 3 days from now
+    future_date = datetime.now(pytz.timezone('Asia/Kuala_Lumpur')) + timedelta(days=3)
+    due_date_str = future_date.strftime('%Y-%m-%dT17:00:00.0000000')
+    
     return {
         'id': 'AAMkAGVmMDEzMTM4LTZmYWUtNDdkNC1hMDZiLTU1OGY5OTZhYmY4OABGAAAAAAAiQ8W967B7TKBjgx9rVEURBwAiIsqMbYjsT5e-T-3V',
         'title': 'Test Task',
@@ -54,7 +62,7 @@ def sample_outlook_task():
         'importance': 'normal',
         'createdDateTime': '2025-10-26T10:00:00.0000000',
         'dueDateTime': {
-            'dateTime': '2025-10-28T17:00:00.0000000',
+            'dateTime': due_date_str,
             'timeZone': 'Asia/Kuala_Lumpur'
         }
     }
@@ -63,6 +71,14 @@ def sample_outlook_task():
 @pytest.fixture
 def sample_high_priority_task():
     """Create a sample high priority Outlook task"""
+    # Use a future date to ensure task is not overdue during testing
+    from datetime import datetime, timedelta
+    import pytz
+    
+    # Calculate tomorrow's date
+    tomorrow = datetime.now(pytz.timezone('Asia/Kuala_Lumpur')) + timedelta(days=1)
+    due_date_str = tomorrow.strftime('%Y-%m-%dT17:00:00.0000000')
+    
     return {
         'id': 'AAMkAGVmMDEzMTM4LTZmYWUtNDdkNC1hMDZiLTU1OGY5OTZhYmY4OABGAAAAAAAiQ8W967B7TKBjgx9rVEURBwAiIsqMbYjsT5e-T-3V',
         'title': 'Urgent Task',
@@ -70,7 +86,7 @@ def sample_high_priority_task():
         'importance': 'high',
         'createdDateTime': '2025-10-26T10:00:00.0000000',
         'dueDateTime': {
-            'dateTime': '2025-10-27T17:00:00.0000000',
+            'dateTime': due_date_str,
             'timeZone': 'Asia/Kuala_Lumpur'
         }
     }
@@ -79,14 +95,23 @@ def sample_high_priority_task():
 @pytest.fixture
 def sample_overdue_task():
     """Create a sample overdue Outlook task"""
+    # Use a past date to ensure task is overdue during testing
+    from datetime import datetime, timedelta
+    import pytz
+    
+    # Calculate a date 7 days ago
+    past_date = datetime.now(pytz.timezone('Asia/Kuala_Lumpur')) - timedelta(days=7)
+    due_date_str = past_date.strftime('%Y-%m-%dT17:00:00.0000000')
+    created_date = (past_date - timedelta(days=10)).strftime('%Y-%m-%dT10:00:00.0000000')
+    
     return {
         'id': 'AAMkAGVmMDEzMTM4LTZmYWUtNDdkNC1hMDZiLTU1OGY5OTZhYmY4OABGAAAAAAAiQ8W967B7TKBjgx9rVEURBwAiIsqMbYjsT5e-T-3V',
         'title': 'Overdue Task',
         'status': 'notStarted',
         'importance': 'high',
-        'createdDateTime': '2025-10-20T10:00:00.0000000',
+        'createdDateTime': created_date,
         'dueDateTime': {
-            'dateTime': '2025-10-25T17:00:00.0000000',
+            'dateTime': due_date_str,
             'timeZone': 'Asia/Kuala_Lumpur'
         }
     }

@@ -45,18 +45,17 @@ echo.
 echo Environment variables loaded successfully!
 echo.
 
-REM Activate virtual environment
-if exist ".venv\Scripts\activate.bat" (
-    call .venv\Scripts\activate.bat
-    echo Virtual environment activated
+REM Activate virtual environment and start the bot
+if exist ".venv\Scripts\python.exe" (
+    echo Virtual environment found - using .venv Python
+    echo.
+    echo Starting bot from src\bot.py...
+    .venv\Scripts\python.exe src\bot.py
 ) else (
     echo WARNING: Virtual environment not found - using system Python
+    echo.
+    echo Starting bot from src\bot.py...
+    python src\bot.py
 )
-
-echo.
-
-REM Start the bot
-echo Starting bot from src\bot.py...
-python src\bot.py
 
 pause
