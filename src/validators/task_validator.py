@@ -162,8 +162,8 @@ class TaskValidator:
         
         # Check for very short inputs (likely greetings or exclamations)
         if len(words) <= 2:
-            # Check if it's a greeting
-            if any(greeting in cleaned_input for greeting in self.GREETING_PATTERNS):
+            # Check if it's a greeting (use word boundary matching)
+            if any(f" {greeting} " in f" {cleaned_input} " or cleaned_input == greeting for greeting in self.GREETING_PATTERNS):
                 return RelevanceValidationResult(
                     is_task_related=False,
                     confidence=0.95,
@@ -171,8 +171,8 @@ class TaskValidator:
                     detected_category="greeting"
                 )
             
-            # Check if it's an irrelevant pattern
-            if any(pattern in cleaned_input for pattern in self.IRRELEVANT_PATTERNS):
+            # Check if it's an irrelevant pattern (use word boundary matching)
+            if any(f" {pattern} " in f" {cleaned_input} " or cleaned_input == pattern for pattern in self.IRRELEVANT_PATTERNS):
                 return RelevanceValidationResult(
                     is_task_related=False,
                     confidence=0.9,
@@ -204,13 +204,15 @@ class TaskValidator:
                 break
         
         # Check for greetings (negative indicator)
-        greetings_found = [g for g in self.GREETING_PATTERNS if g in cleaned_input]
+        # Use word boundary matching to avoid false positives
+        greetings_found = [g for g in self.GREETING_PATTERNS if f" {g} " in f" {cleaned_input} " or cleaned_input == g]
         if greetings_found:
             task_score -= 0.5
             reasons.append(f"Contains greeting: {', '.join(greetings_found)}")
         
         # Check for question patterns (negative indicator)
-        questions_found = [q for q in self.QUESTION_PATTERNS if q in cleaned_input]
+        # Use word boundary matching to avoid false positives
+        questions_found = [q for q in self.QUESTION_PATTERNS if f" {q} " in f" {cleaned_input} " or cleaned_input == q]
         if questions_found:
             task_score -= 0.4
             reasons.append(f"Contains question pattern: {', '.join(questions_found)}")
@@ -221,7 +223,8 @@ class TaskValidator:
             reasons.append("Ends with question mark")
         
         # Check for irrelevant patterns (negative indicator)
-        irrelevant_found = [p for p in self.IRRELEVANT_PATTERNS if p in cleaned_input]
+        # Use word boundary matching to avoid false positives (e.g., "no" in "economics")
+        irrelevant_found = [p for p in self.IRRELEVANT_PATTERNS if f" {p} " in f" {cleaned_input} " or cleaned_input == p]
         if irrelevant_found:
             task_score -= 0.3
             reasons.append(f"Contains irrelevant pattern: {', '.join(irrelevant_found)}")

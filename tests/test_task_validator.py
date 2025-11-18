@@ -228,3 +228,21 @@ class TestTaskValidator:
             result = validator.validate_input_relevance(message)
             # Should have some positive score for task-relatedness (relaxed threshold)
             assert result.is_task_related or result.confidence >= 0.0
+    
+    def test_substring_false_positive_prevention(self):
+        """Test that substring matching doesn't cause false positives"""
+        validator = TaskValidator()
+        
+        # "economics" contains "no" but should not be flagged as irrelevant
+        result = validator.validate_input_relevance("Go attend economics lecture session")
+        assert result.is_task_related, f"Should detect as task. Reason: {result.reason}"
+        assert result.detected_category == "task"
+        
+        # "another" contains "no" but should not be flagged
+        result = validator.validate_input_relevance("Complete another assignment tomorrow")
+        assert result.is_task_related
+        
+        # But actual standalone "no" should still be detected
+        result = validator.validate_input_relevance("no")
+        assert not result.is_task_related
+        assert result.detected_category == "irrelevant"
