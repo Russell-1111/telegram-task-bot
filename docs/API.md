@@ -140,7 +140,7 @@ The bot uses Google Gemini AI to process natural language and extract:
 #### Create Task
 - **Endpoint**: `/me/todo/lists/{listId}/tasks`
 - **Method**: POST
-- **Service Method**: `OutlookService.create_task(token, title, due_date)`
+- **Service Method**: `OutlookService.create_task(token, task_title, due_date_iso)`
 - **Payload**:
   ```json
   {
@@ -222,7 +222,7 @@ The bot uses a clean service layer pattern for better maintainability and testab
   - Returns access token
   - Wraps `outlook_api.get_auth_token()`
   
-- `create_task(token: str, title: str, due_date: str | None)` → dict
+- `create_task(token: str, task_title: str, due_date_iso: str | None)` → dict
   - Creates new Outlook task
   - Optional due date in ISO format
   - Returns task data from API
@@ -430,6 +430,7 @@ else:
   - Analyzes user message
   - Extracts intent, task summary, due date
   - Returns `TaskIntent` dataclass
+  - **Note**: `current_date` is a `datetime` object, not a string
   - **Note**: `current_date` is a `datetime` object, not a string
 
 **TaskIntent Dataclass**:

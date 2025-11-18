@@ -47,8 +47,8 @@ outlook_service = OutlookService()
 try:
     task = outlook_service.create_task(
         access_token="your_access_token",
-        title="Complete project documentation",
-        due_date="2025-10-10"
+        task_title="Complete project documentation",
+        due_date_iso="2025-10-10"
     )
     print(f"Task created with ID: {task['id']}")
 except Exception as e:
@@ -80,8 +80,8 @@ def create_task_safely(user_id: int, title: str, due_date: str):
     try:
         task = outlook_service.create_task(
             access_token=access_token,
-            title=title,
-            due_date=due_date
+            task_title=title,
+            due_date_iso=due_date
         )
         return {
             "success": True,
@@ -747,8 +747,8 @@ async def handle_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE
         try:
             created_task = outlook_service.create_task(
                 access_token=access_token,
-                title=task_data["title"],
-                due_date=task_data.get("due_date")
+                task_title=task_data["title"],
+                due_date_iso=task_data.get("due_date")
             )
             
             # Clear state
@@ -1050,8 +1050,8 @@ class TestOutlookService(unittest.TestCase):
         # Act
         result = self.service.create_task(
             access_token=self.mock_token,
-            title="Test Task",
-            due_date="2025-10-10"
+            task_title="Test Task",
+            due_date_iso="2025-10-10"
         )
         
         # Assert
@@ -1283,8 +1283,8 @@ class TestIntegration(unittest.TestCase):
         # Create task
         created_task = outlook_service.create_task(
             access_token=test_token,
-            title="Integration Test Task",
-            due_date="2025-12-31"
+            task_title="Integration Test Task",
+            due_date_iso="2025-12-31"
         )
         
         self.assertIsNotNone(created_task)
@@ -1447,8 +1447,8 @@ def import_tasks_from_csv(access_token: str, csv_file_path: str):
             try:
                 task = outlook_service.create_task(
                     access_token=access_token,
-                    title=title,
-                    due_date=due_date
+                    task_title=title,
+                    due_date_iso=due_date
                 )
                 results["success"].append(task)
             except Exception as e:
