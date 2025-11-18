@@ -19,7 +19,6 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from services import OutlookService
-from utils import TokenManager
 from formatters import format_tasks_list, get_motivational_message
 
 logger = logging.getLogger(__name__)
@@ -27,9 +26,16 @@ logger = logging.getLogger(__name__)
 # Malaysia timezone for consistent date handling
 MALAYSIA_TZ = pytz.timezone('Asia/Kuala_Lumpur')
 
-# Initialize services
+# Initialize services - note: token_manager should be passed from bot.py
 outlook_service = OutlookService()
-token_manager = TokenManager()
+
+# Global reference to token_manager (set by bot.py)
+token_manager = None
+
+def set_token_manager(manager):
+    """Set the token manager instance from bot.py."""
+    global token_manager
+    token_manager = manager
 
 # Rate limiting dictionary to track last /mytasks usage per user
 user_last_mytasks_request = {}

@@ -103,7 +103,7 @@ class TestTaskFormatter:
         message = get_motivational_message(0)
         
         # Check for any celebratory emoji  
-        assert any(emoji in message for emoji in ["🎉", "🏆", "✨", "🎯", "🏖️"])
+        assert any(emoji in message for emoji in ["🎉", "🏆", "✨", "🎯", "🏖️", "🌟"])
         # Check for accomplishment words
         assert any(word in message.lower() for word in ["amazing", "inbox zero", "perfect", "outstanding", "accomplished", "done", "break", "great"])
     

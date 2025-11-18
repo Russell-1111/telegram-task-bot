@@ -20,3 +20,11 @@ DEFAULT_TASK_TIME = "17:00:00"  # 5:00 PM
 # Logging Configuration
 LOG_LEVEL = "INFO"
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# State Persistence Configuration (Optional)
+# Uncomment and set these to enable persistent state across bot restarts
+# STATE_ENCRYPTION_KEY = "your_32_byte_base64_encoded_fernet_key_here"  # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# DATA_DIR = "data"  # Directory for state files (default: "data")
+# ENABLE_PERSISTENCE = True  # Set to False to disable persistence (default: True)
+# BACKUP_RETENTION_COUNT = 3  # Number of backup files to keep (default: 3)
+# AUTO_SAVE_INTERVAL_SECONDS = 300  # Auto-save interval in seconds (default: 300 = 5 minutes)

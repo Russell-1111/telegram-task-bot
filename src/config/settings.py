@@ -45,6 +45,13 @@ class AppConfig:
     # ===== File Paths =====
     lock_file_path: str = "bot.lock"
     
+    # ===== State Persistence Configuration =====
+    state_encryption_key: str = None  # Will be auto-generated if not provided
+    data_dir: str = "data"
+    enable_persistence: bool = True
+    backup_retention_count: int = 3
+    auto_save_interval_seconds: int = 300  # 5 minutes
+    
     # ===== Logging Configuration =====
     log_level: str = "INFO"
     log_format: str = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -71,9 +78,60 @@ class AppConfig:
                 f"max_task_words ({self.max_task_words})"
             )
         
+        # Validate persistence settings
+        if self.enable_persistence:
+            # Validate backup retention count
+            if self.backup_retention_count < 1:
+                logger.warning(
+                    f"backup_retention_count ({self.backup_retention_count}) is less than 1. "
+                    f"Using default value 3."
+                )
+                self.backup_retention_count = 3
+            elif self.backup_retention_count > 10:
+                logger.warning(
+                    f"backup_retention_count ({self.backup_retention_count}) exceeds 10. "
+                    f"Using maximum value 10."
+                )
+                self.backup_retention_count = 10
+            
+            # Validate encryption key format if provided
+            if self.state_encryption_key:
+                try:
+                    import base64
+                    key_bytes = base64.urlsafe_b64decode(self.state_encryption_key)
+                    if len(key_bytes) != 32:
+                        raise ValueError(
+                            f"STATE_ENCRYPTION_KEY must be a 32-byte base64-encoded Fernet key. "
+                            f"Got {len(key_bytes)} bytes after decoding."
+                        )
+                except Exception as e:
+                    raise ValueError(
+                        f"Invalid STATE_ENCRYPTION_KEY format: {e}. "
+                        f"Generate a valid key with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+                    )
+            
+            # Validate/create data directory
+            import pathlib
+            data_path = pathlib.Path(self.data_dir)
+            try:
+                data_path.mkdir(parents=True, exist_ok=True)
+                # Test write permissions
+                test_file = data_path / ".write_test"
+                test_file.touch()
+                test_file.unlink()
+            except (PermissionError, OSError) as e:
+                raise ValueError(
+                    f"Cannot write to data directory '{self.data_dir}': {e}. "
+                    f"Please check permissions or set DATA_DIR to a writable location."
+                )
+        
         logger.info("Configuration loaded successfully")
         logger.info(f"Timezone: {self.timezone}")
         logger.info(f"Task word limits: {self.min_task_words}-{self.max_task_words}")
+        if self.enable_persistence:
+            logger.info(f"Persistence enabled: data_dir={self.data_dir}, backups={self.backup_retention_count}")
+        else:
+            logger.warning("Persistence is DISABLED - state will not be saved across restarts")
     
     @classmethod
     def from_env(cls) -> 'AppConfig':
@@ -101,6 +159,13 @@ class AppConfig:
         max_display = int(os.getenv("MAX_TASKS_DISPLAY", "10"))
         rate_limit = int(os.getenv("RATE_LIMIT_SECONDS", "60"))
         
+        # Parse persistence settings
+        encryption_key = os.getenv("STATE_ENCRYPTION_KEY")
+        data_dir = os.getenv("DATA_DIR", "data")
+        enable_persistence = os.getenv("ENABLE_PERSISTENCE", "true").lower() in ("true", "1", "yes", "on")
+        backup_retention = int(os.getenv("BACKUP_RETENTION_COUNT", "3"))
+        auto_save_interval = int(os.getenv("AUTO_SAVE_INTERVAL_SECONDS", "300"))
+        
         return cls(
             gemini_api_key=gemini_key,
             telegram_bot_token=telegram_token,
@@ -110,7 +175,12 @@ class AppConfig:
             min_task_words=min_words,
             max_task_words=max_words,
             max_tasks_display=max_display,
-            rate_limit_seconds=rate_limit
+            rate_limit_seconds=rate_limit,
+            state_encryption_key=encryption_key,
+            data_dir=data_dir,
+            enable_persistence=enable_persistence,
+            backup_retention_count=backup_retention,
+            auto_save_interval_seconds=auto_save_interval
         )
     
     def setup_logging(self):

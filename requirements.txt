@@ -13,6 +13,9 @@ requests>=2.28.0
 # Timezone handling
 pytz>=2023.3
 
+# State persistence and encryption
+cryptography>=41.0.0
+
 # Development dependencies
 # Testing framework
 pytest>=7.0.0

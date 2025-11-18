@@ -165,6 +165,47 @@ The bot requires the following environment variables (stored in `.env` file):
 | `MIN_TASK_WORDS` | ⚠️ Optional | `3` | Minimum words for task summary validation |
 | `MAX_TASK_WORDS` | ⚠️ Optional | `12` | Maximum words for task summary validation |
 
+### State Persistence Configuration
+
+The bot now supports **persistent state management** to preserve user sessions and authentication tokens across restarts:
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `STATE_ENCRYPTION_KEY` | ⚠️ Optional | Auto-generated | Base64-encoded 32-byte key for token encryption (Fernet) |
+| `DATA_DIR` | ⚠️ Optional | `data` | Directory path for state files |
+| `ENABLE_PERSISTENCE` | ⚠️ Optional | `true` | Enable/disable persistence (`true` or `false`) |
+| `BACKUP_RETENTION_COUNT` | ⚠️ Optional | `3` | Number of backup files to keep (1-10) |
+| `AUTO_SAVE_INTERVAL_SECONDS` | ⚠️ Optional | `300` | Auto-save interval in seconds (0 = disable, 5 minutes default) |
+
+**Key Features:**
+- **Encrypted Tokens**: Microsoft Graph tokens encrypted at rest using Fernet (AES-128-CBC + HMAC)
+- **Auto-Save**: Background thread saves state every 5 minutes (configurable)
+- **Graceful Degradation**: Falls back to in-memory storage if persistence fails
+- **Automatic Backups**: Rotating backups with configurable retention
+- **Secure Permissions**: Files created with restrictive permissions (owner-only access)
+
+**Quick Setup:**
+```powershell
+# Option 1: Auto-generate encryption key (simplest)
+# Just enable persistence, key will be auto-generated on first run
+$env:ENABLE_PERSISTENCE="true"
+
+# Option 2: Manual key generation (recommended for production)
+$env:STATE_ENCRYPTION_KEY="<your-base64-key-here>"
+$env:ENABLE_PERSISTENCE="true"
+$env:DATA_DIR="data"
+```
+
+**Generate Encryption Key:**
+```powershell
+# Using Python to generate a secure key
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+⚠️ **Important**: Store your `STATE_ENCRYPTION_KEY` securely! Losing it means losing access to all encrypted tokens.
+
+For detailed persistence documentation, see [`docs/PERSISTENCE-GUIDE.md`](docs/PERSISTENCE-GUIDE.md).
+
 ### Setup Instructions
 
 **Option A: Using .env file (Recommended)**
@@ -243,6 +284,7 @@ The project maintains a stable branch (`stable-v1.0`) for reliable rollbacks.
 | Rate Limiting | ✅ | 1 request/minute for `/mytasks` to prevent spam |
 | Motivational Messages | ✅ | Dynamic encouragement based on task count |
 | State Management | ✅ | Centralized user state (zero global variables) |
+| **Persistent State** | ✅ | **Encrypted token storage, auto-save, session recovery** |
 
 ## 🏗️ Architecture
 
@@ -277,10 +319,20 @@ See [`docs/PHASE1-SUMMARY.md`](docs/PHASE1-SUMMARY.md), [`docs/PHASE2-SUMMARY.md
 ### API Key Protection
 - ✅ **`.env` file** is excluded from git via `.gitignore`
 - ✅ **Never commit** API keys or tokens to version control
-- ✅ **Token storage** is in-memory only (session-based, no persistence)
+- ✅ **Token storage** uses encrypted persistence (Fernet AES-128-CBC + HMAC)
+- ✅ **Encryption keys** stored separately from encrypted data
+- ✅ **File permissions** restricted to owner-only (0600 Unix, user-only ACL Windows)
 - ✅ **Setup script** displays masked values for security
 - ⚠️ **Keep `.env` file** permissions restricted (read-only for your user)
+- ⚠️ **Backup encryption key** (`STATE_ENCRYPTION_KEY`) securely
 - ⚠️ **Regenerate keys immediately** if accidentally exposed
+
+### Persistence Security
+- **Encryption at Rest**: Microsoft Graph tokens encrypted using Fernet (symmetric encryption)
+- **Key Management**: Encryption key stored in environment variable (separate from data)
+- **Automatic Backups**: 3 rotating backups with timestamp-based naming
+- **Secure Permissions**: Data files created with restrictive access (owner-only)
+- **Graceful Degradation**: Falls back to in-memory if persistence fails
 
 ### Best Practices
 - **Development**: Use `.env` file for local development
@@ -302,12 +354,10 @@ See [`docs/PHASE1-SUMMARY.md`](docs/PHASE1-SUMMARY.md), [`docs/PHASE2-SUMMARY.md
 - **Single-user authentication**: TokenManager stores one token globally (not per-user)
   - *Workaround*: For multi-user support, implement per-user token storage
 - **Session-based tokens**: Access tokens expire after ~1 hour
-  - *Workaround*: Users must re-authenticate with `/connectoutlook`
+  - *Workaround*: Tokens are now saved persistently and restored on restart
   - *Future*: Automatic token refresh mechanism planned
 - **Hardcoded timezone**: All dates use Malaysia timezone (UTC+8)
   - *Workaround*: Modify `src/config/settings.py` for different timezone
-- **No conversation persistence**: Bot state is cleared on restart
-  - *Future*: Database integration for persistent state
 - **Rate limiting**: `/mytasks` command limited to 1 request/minute per user
   - *Purpose*: Prevent Microsoft Graph API spam
 - **Task limit**: Displays maximum 10 tasks in `/mytasks` view

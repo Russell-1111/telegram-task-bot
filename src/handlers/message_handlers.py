@@ -21,7 +21,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from config import config
 from services import LLMService, OutlookService
-from utils import UserStateManager, TokenManager
 from validators import TaskValidator
 from formatters import validate_and_process_date, format_due_date_for_outlook
 
@@ -33,9 +32,17 @@ MALAYSIA_TZ = pytz.timezone('Asia/Kuala_Lumpur')
 # Initialize services and utilities
 llm_service = LLMService(config.gemini_api_key, config.gemini_model_name)
 task_validator = TaskValidator()
-state_manager = UserStateManager()
 outlook_service = OutlookService()
-token_manager = TokenManager()
+
+# Global references to managers (set by bot.py via command_handlers)
+state_manager = None
+token_manager = None
+
+def set_managers(token_mgr, state_mgr):
+    """Set the manager instances from bot.py."""
+    global token_manager, state_manager
+    token_manager = token_mgr
+    state_manager = state_mgr
 
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -84,11 +91,6 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     Technical Note:
         Uses TokenManager for token storage and StateManager for user state.
     """
-    # Import token_manager and outlook_service from command_handlers to ensure we use the same instances
-    from .command_handlers import get_token_manager, get_outlook_service
-    token_manager_instance = get_token_manager()
-    outlook_service_instance = get_outlook_service()
-    
     user_message = update.message.text
     user_id = update.effective_user.id
     logger.info(f"Received message from {update.effective_user.first_name}: '{user_message}'")
@@ -187,14 +189,14 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # --- ORCHESTRATION LOGIC ---
         if intent == "create_task" and summary:
             # Create new task
-            if token_manager_instance.has_token():
+            if token_manager.has_token():
                 try:
                     # Use LLM-extracted due date or fallback to current date
                     due_datetime = format_due_date_for_outlook(processed_due_date)
                     due_date_display = processed_due_date if processed_due_date else "Today (Malaysia time)"
                     
-                    access_token = token_manager_instance.get_token()
-                    task_data = outlook_service_instance.create_task(access_token, summary, due_datetime)
+                    access_token = token_manager.get_token()
+                    task_data = outlook_service.create_task(access_token, summary, due_datetime)
                     
                     # Store the created task in StateManager for potential due date updates
                     state_manager.set_user_task(user_id, task_data['id'], summary, processed_due_date)
@@ -212,15 +214,15 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             last_task = state_manager.get_user_task(user_id)
             if not last_task:
                 reply_message = "❌ No recent task found to update. Create a task first, then I can help you change its due date."
-            elif not token_manager_instance.has_token():
+            elif not token_manager.has_token():
                 reply_message = "🔗 I need to connect to your Outlook first! Please use the /connectoutlook command."
             else:
                 try:
                     # Update the existing task's due date
                     due_datetime = format_due_date_for_outlook(processed_due_date)
                     
-                    access_token = token_manager_instance.get_token()
-                    updated_task = outlook_service_instance.update_task_due_date(access_token, last_task['id'], due_datetime)
+                    access_token = token_manager.get_token()
+                    updated_task = outlook_service.update_task_due_date(access_token, last_task['id'], due_datetime)
                     
                     # Update our stored task info in StateManager
                     state_manager.set_user_task(user_id, last_task['id'], last_task['title'], processed_due_date)
