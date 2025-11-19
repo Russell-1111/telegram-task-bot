@@ -140,3 +140,42 @@ def sample_task_intent():
         confidence=1.0,
         raw_response='{"intent": "create_task", "summary": "Buy groceries and milk", "due_date": "2025-10-28"}'
     )
+
+
+# Persistence Testing Fixtures
+
+@pytest.fixture
+def mock_encryption_manager():
+    """Create a mock EncryptionManager for testing"""
+    from cryptography.fernet import Fernet
+    from utils.encryption import EncryptionManager
+    
+    # Create real encryption manager with generated key for testing
+    key = Fernet.generate_key().decode()
+    return EncryptionManager(key)
+
+
+@pytest.fixture
+def mock_token_manager():
+    """Create a TokenManager with mocked dependencies"""
+    from utils.token_manager import TokenManager
+    mock_manager = TokenManager(persistence_enabled=False)
+    return mock_manager
+
+
+@pytest.fixture
+def mock_state_manager():
+    """Create a UserStateManager with mocked dependencies"""
+    from utils.state_manager import UserStateManager
+    mock_manager = UserStateManager(persistence_enabled=False)
+    return mock_manager
+
+
+@pytest.fixture
+def temp_data_dir(tmp_path):
+    """Create a temporary data directory for testing"""
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    backups_dir = data_dir / "backups"
+    backups_dir.mkdir()
+    return data_dir
