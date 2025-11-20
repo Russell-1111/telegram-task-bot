@@ -24,6 +24,7 @@ import pytz
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # Import new service layer (Phase 3 architecture)
+import asyncio
 from services import OutlookService
 from utils import TokenManager
 
@@ -37,7 +38,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def cleanup_old_tasks():
+async def cleanup_old_tasks():
     """
     Delete old Outlook tasks (tasks with due dates before today).
     
@@ -66,8 +67,9 @@ def cleanup_old_tasks():
     access_token = None
     try:
         logger.info("Initiating Outlook authentication...")
-        access_token = outlook_service.authenticate()
-        token_manager.set_token(access_token)
+        access_token = await outlook_service.authenticate()
+        # Use a dummy user_id (0) for standalone script
+        token_manager.set_token(user_id=0, token=access_token)
         logger.info("✅ Successfully authenticated with Outlook!")
         
     except Exception as e:
@@ -85,7 +87,7 @@ def cleanup_old_tasks():
     all_tasks = []
     try:
         logger.info("Fetching all tasks from Outlook...")
-        all_tasks = outlook_service.get_all_tasks(access_token)
+        all_tasks = await outlook_service.get_all_tasks(access_token)
         logger.info(f"✅ Found {len(all_tasks)} tasks in total.")
     except Exception as e:
         logger.error(f"❌ Failed to retrieve tasks: {e}")
@@ -147,7 +149,7 @@ def cleanup_old_tasks():
                 if task_due_date_malaysia < today_malaysia:
                     logger.info(f"🗑️  Task '{task_title}' (ID: {task_id}) is old (due: {task_due_date_malaysia}), attempting to delete.")
                     try:
-                        outlook_service.delete_task(access_token, task_id)
+                        await outlook_service.delete_task(access_token, task_id)
                         deleted_count += 1
                         logger.info(f"   ✅ Deleted successfully")
                     except Exception as delete_error:
@@ -198,7 +200,7 @@ def main():
     print("=" * 60 + "\n")
     
     try:
-        deleted_count = cleanup_old_tasks()
+        deleted_count = asyncio.run(cleanup_old_tasks())
         
         if deleted_count == -1:
             print("\n❌ Cleanup failed. Check logs above for details.\n")
