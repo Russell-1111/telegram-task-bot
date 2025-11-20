@@ -9,6 +9,7 @@ This service handles all interactions with Google's Gemini AI for:
 
 This abstraction allows easy swapping of LLM providers (Gemini → OpenAI, etc.)
 """
+import asyncio
 import google.generativeai as genai
 from datetime import datetime
 from dataclasses import dataclass
@@ -46,10 +47,13 @@ class LLMService:
     interface for analyzing user messages. Can be easily swapped for other
     LLM providers by implementing the same interface.
     
+    All methods are async and use asyncio.to_thread to wrap blocking operations,
+    preventing event loop blocking during LLM inference.
+    
     Example:
         llm = LLMService(api_key=config.gemini_api_key)
         
-        intent = llm.analyze_task_request(
+        intent = await llm.analyze_task_request(
             user_message="Buy groceries tomorrow",
             current_date=datetime.now(),
             last_task_context={'title': 'Previous task', 'due_date': '2025-10-01'}
@@ -75,14 +79,17 @@ class LLMService:
         self.model_name = model_name
         logger.info(f"LLM Service initialized with model: {model_name}")
     
-    def analyze_task_request(
+    async def analyze_task_request(
         self,
         user_message: str,
         current_date: datetime,
         last_task_context: Optional[Dict[str, Any]] = None
     ) -> TaskIntent:
         """
-        Analyze user message and extract task intent.
+        Analyze user message and extract task intent asynchronously.
+        
+        This method offloads the blocking LLM inference call to a separate thread
+        using asyncio.to_thread, preventing the event loop from blocking.
         
         Args:
             user_message: The user's input message
@@ -100,9 +107,9 @@ class LLMService:
             # Build the prompt
             prompt = self._build_prompt(user_message, current_date, last_task_context)
             
-            # Call LLM
+            # Call LLM (offload blocking call to thread pool to prevent event loop blocking)
             logger.debug(f"Sending request to {self.model_name} for message: '{user_message}'")
-            response = self.model.generate_content(prompt)
+            response = await asyncio.to_thread(self.model.generate_content, prompt)
             raw_response = response.text
             
             # Parse response

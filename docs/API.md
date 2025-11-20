@@ -426,11 +426,12 @@ else:
 **Class**: `LLMService`
 
 **Methods**:
-- `analyze_task_request(user_message: str, current_date: datetime, last_task_context: dict | None)` → TaskIntent
-  - Analyzes user message
+- `async analyze_task_request(user_message: str, current_date: datetime, last_task_context: dict | None)` → TaskIntent
+  - **⚠️ ASYNC**: This method is now asynchronous and must be awaited
+  - Analyzes user message without blocking the event loop
+  - Uses `asyncio.to_thread` to offload blocking LLM inference to a thread pool
   - Extracts intent, task summary, due date
   - Returns `TaskIntent` dataclass
-  - **Note**: `current_date` is a `datetime` object, not a string
   - **Note**: `current_date` is a `datetime` object, not a string
 
 **TaskIntent Dataclass**:
@@ -456,7 +457,8 @@ llm_service = LLMService(api_key, model_name)
 malaysia_tz = pytz.timezone('Asia/Kuala_Lumpur')
 current_date = datetime.now(malaysia_tz)
 
-intent = llm_service.analyze_task_request(
+# IMPORTANT: analyze_task_request is async and must be awaited
+intent = await llm_service.analyze_task_request(
     user_message="Buy groceries tomorrow",
     current_date=current_date,  # datetime object, not string!
     last_task_context=None

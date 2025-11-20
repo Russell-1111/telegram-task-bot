@@ -155,8 +155,8 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 'due_date': last_task.get('due_date')
             }
         
-        # Analyze user message with LLM service
-        task_intent = llm_service.analyze_task_request(
+        # Analyze user message with LLM service (async call)
+        task_intent = await llm_service.analyze_task_request(
             user_message=user_message,
             current_date=current_date,
             last_task_context=last_task_context

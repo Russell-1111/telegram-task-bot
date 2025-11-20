@@ -861,6 +861,80 @@ High Impact, High Effort (PLAN SPRINT):
 
 ---
 
+## 🔄 Async I/O Pattern Consistency
+
+### Service Layer Async Architecture
+
+**Implementation Status**: ✅ Both services now follow consistent async patterns
+
+Both `OutlookService` and `LLMService` now use the same asynchronous I/O pattern to prevent event loop blocking:
+
+**Pattern**: `asyncio.to_thread` for Blocking External API Calls
+
+```python
+# OutlookService (existing pattern)
+async def create_task(self, access_token: str, title: str, due_datetime: str) -> dict:
+    """Create task without blocking event loop"""
+    task_data = await asyncio.to_thread(
+        outlook_api.create_task,
+        access_token,
+        title,
+        due_datetime
+    )
+    return task_data
+
+# LLMService (newly implemented pattern - matches OutlookService)
+async def analyze_task_request(self, user_message: str, current_date: datetime, 
+                                last_task_context: Optional[Dict[str, Any]] = None) -> TaskIntent:
+    """Analyze user message without blocking event loop"""
+    prompt = self._build_prompt(user_message, current_date, last_task_context)
+    
+    # Offload blocking LLM call to thread pool (2-10 second operation)
+    response = await asyncio.to_thread(self.model.generate_content, prompt)
+    
+    intent = self._parse_response(response.text)
+    return intent
+```
+
+**Benefits**:
+- ✅ **Non-blocking**: Bot remains responsive during LLM inference (2-10 seconds)
+- ✅ **Concurrent requests**: Multiple users can create tasks simultaneously
+- ✅ **Pattern consistency**: Both services use identical async approach
+- ✅ **Future-proof**: Easy to extend pattern to other blocking operations
+
+**Usage in Handlers**:
+```python
+# Message handler properly awaits async service calls
+async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # LLM analysis (async, non-blocking)
+    task_intent = await llm_service.analyze_task_request(
+        user_message=user_message,
+        current_date=current_date,
+        last_task_context=last_task_context
+    )
+    
+    # Outlook task creation (async, non-blocking)
+    task_data = await outlook_service.create_task(
+        access_token, summary, due_datetime
+    )
+```
+
+**Testing Strategy**:
+```python
+# Mock asyncio.to_thread for fast, isolated tests
+@pytest.mark.asyncio
+async def test_llm_analysis():
+    with patch('asyncio.to_thread', new_callable=AsyncMock) as mock_to_thread:
+        mock_to_thread.return_value = mock_response
+        
+        result = await llm_service.analyze_task_request("Test", datetime.now())
+        
+        assert result.intent == "create_task"
+        mock_to_thread.assert_called_once()  # Verify thread offloading
+```
+
+---
+
 ## 📋 Acceptance Criteria for "Done"
 
 After refactoring, you should be able to:
@@ -870,6 +944,7 @@ After refactoring, you should be able to:
 ✅ **Clear Boundaries**: New developer finds task logic in under 5 minutes  
 ✅ **Configuration**: Change timezone/limits without touching code  
 ✅ **Single Responsibility**: No file over 300 lines, each class has ONE job  
+✅ **Async Consistency**: All service layer methods use `asyncio.to_thread` for blocking I/O  
 
 ---
 
