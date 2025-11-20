@@ -116,23 +116,34 @@ telegram_task_bot/
 │   ├── validators/        # Input validation (Phase 1)
 │   │   ├── __init__.py
 │   │   └── task_validator.py     # Task summary validation
-│   └── utils/             # Utilities (Phase 1 & 3)
+│   └── utils/             # Utilities (Phase 1, 3 & 4)
 │       ├── __init__.py
 │       ├── lock_manager.py       # Single-instance protection
 │       ├── state_manager.py      # User state management
-│       └── token_manager.py      # Access token lifecycle
+│       ├── token_manager.py      # Access token lifecycle with persistence
+│       ├── encryption.py         # Fernet encryption for secure storage
+│       ├── auto_save.py          # Background auto-save thread
+│       └── file_operations.py    # Atomic writes, backups, permissions
 ├── scripts/               # Helper scripts
 │   ├── git-save.bat      # Quick Git save
 │   ├── git-revert.bat    # Revert to stable version
 │   ├── git-history.bat   # View commit history
 │   └── git-status.bat    # Git status overview
 ├── docs/                  # Documentation
-│   ├── API.md                    # API reference
-│   ├── SETUP.md                  # Installation guide
-│   ├── ARCHITECTURE-REVIEW.md    # Architecture analysis
-│   ├── PHASE1-SUMMARY.md        # Phase 1 refactoring metrics
-│   ├── PHASE2-SUMMARY.md        # Phase 2 refactoring metrics
-│   └── PHASE3-SUMMARY.md        # Phase 3 refactoring metrics
+│   ├── API.md                    # Complete API reference for all services
+│   ├── EXAMPLES.md               # Practical usage patterns and code examples
+│   ├── SETUP.md                  # Installation and configuration guide
+│   ├── ENVIRONMENT-SETUP.md      # Environment variable setup details
+│   ├── ARCHITECTURE-REVIEW.md    # Architecture analysis and design decisions
+│   ├── PERSISTENCE-GUIDE.md      # Persistent state management guide
+│   ├── VALIDATION-GUIDE.md       # Input validation documentation
+│   ├── GIT-COMMIT-GUIDE.md       # Git workflow and commit guidelines
+│   ├── PHASE1-SUMMARY.md         # Phase 1 refactoring metrics
+│   ├── PHASE2-SUMMARY.md         # Phase 2 refactoring metrics
+│   ├── PHASE3-SUMMARY.md         # Phase 3 refactoring metrics
+│   ├── CLEANUP-SUMMARY.md        # Code cleanup documentation
+│   ├── REDUNDANCY-ANALYSIS.md    # Code redundancy analysis
+│   └── SESSION-FIXES-2025-10-06.md  # Session management fixes
 ├── config/               # Configuration templates
 │   └── config_template.py
 ├── .venv/               # Virtual environment
@@ -291,7 +302,7 @@ The project maintains a stable branch (`stable-v1.0`) for reliable rollbacks.
 
 ## 🏗️ Architecture
 
-This bot follows a **clean service layer architecture** implemented across 3 refactoring phases:
+This bot follows a **clean service layer architecture** implemented across 4 refactoring phases:
 
 ### **Phase 1: Foundation** (Configuration, Lock Manager, Validators)
 - ✅ Centralized configuration management
@@ -310,12 +321,19 @@ This bot follows a **clean service layer architecture** implemented across 3 ref
 - ✅ TokenManager handles access token lifecycle
 - ✅ **Zero global variables** - all state properly managed
 
-**Architecture Grade:** A- (up from D before refactoring)  
+### **Phase 4: Persistent State Management** (Encryption, Auto-Save, File Operations)
+- ✅ Encrypted token storage using Fernet (AES-128-CBC + HMAC)
+- ✅ Auto-save thread for background persistence
+- ✅ Atomic file writes with backup rotation
+- ✅ Graceful shutdown with state preservation
+- ✅ Session recovery across bot restarts
+
+**Architecture Grade:** A (up from D before refactoring)  
 **Coupling:** 2/10 (Excellent)  
 **Cohesion:** 9/10 (Excellent)  
 **Testability:** +98%
 
-See [`docs/PHASE1-SUMMARY.md`](docs/PHASE1-SUMMARY.md), [`docs/PHASE2-SUMMARY.md`](docs/PHASE2-SUMMARY.md), and [`docs/PHASE3-SUMMARY.md`](docs/PHASE3-SUMMARY.md) for detailed metrics.
+See [`docs/PHASE1-SUMMARY.md`](docs/PHASE1-SUMMARY.md), [`docs/PHASE2-SUMMARY.md`](docs/PHASE2-SUMMARY.md), [`docs/PHASE3-SUMMARY.md`](docs/PHASE3-SUMMARY.md), and [`docs/PERSISTENCE-GUIDE.md`](docs/PERSISTENCE-GUIDE.md) for detailed metrics.
 
 ## 🔒 Security
 
@@ -410,16 +428,42 @@ For comprehensive testing instructions, see [TESTING-GUIDE.md](TESTING-GUIDE.md)
 
 ## 📚 Documentation
 
+### Core Documentation
 - **[API Reference](docs/API.md)** - Complete API documentation for all services, utilities, and commands
 - **[Code Examples](docs/EXAMPLES.md)** - Practical usage patterns, integration examples, and common recipes
-- **[Testing Guide](TESTING-GUIDE.md)** - Testing instructions and module reference
 - **[Architecture Review](docs/ARCHITECTURE-REVIEW.md)** - Detailed architecture analysis and design decisions
+
+### Setup & Configuration
 - **[Setup Guide](docs/SETUP.md)** - Installation and configuration instructions
+- **[Environment Setup](docs/ENVIRONMENT-SETUP.md)** - Environment variable configuration details
+- **[Persistence Guide](docs/PERSISTENCE-GUIDE.md)** - Persistent state management and encryption setup
+
+### Development Guides
+- **[Validation Guide](docs/VALIDATION-GUIDE.md)** - Input validation rules and best practices
+- **[Git Commit Guide](docs/GIT-COMMIT-GUIDE.md)** - Git workflow and commit message guidelines
+- **[Testing Guide](TESTING-GUIDE.md)** - Testing instructions and module reference
+
+### Refactoring Documentation
 - **[Phase 1 Summary](docs/PHASE1-SUMMARY.md)** - Configuration, Lock Manager, Validators
 - **[Phase 2 Summary](docs/PHASE2-SUMMARY.md)** - Services, Handlers, Formatters
 - **[Phase 3 Summary](docs/PHASE3-SUMMARY.md)** - Service Layer Refinement
 
+### Technical Documentation
+- **[Cleanup Summary](docs/CLEANUP-SUMMARY.md)** - Code cleanup and optimization details
+- **[Redundancy Analysis](docs/REDUNDANCY-ANALYSIS.md)** - Code redundancy identification and removal
+- **[Session Fixes](docs/SESSION-FIXES-2025-10-06.md)** - Session management bug fixes and improvements
+
 ## 📝 Changelog
+
+### v1.4.0 (November 2025) - Phase 4: Persistent State Management
+- ✅ Added **encrypted token storage** using Fernet (AES-128-CBC + HMAC)
+- ✅ Implemented **auto-save thread** for background state persistence
+- ✅ Created **file operations utilities** (atomic writes, secure permissions, backup rotation)
+- ✅ Added **EncryptionManager** for secure data encryption at rest
+- ✅ Implemented **graceful shutdown** with final state save
+- ✅ Added **backup rotation** system (configurable retention)
+- ✅ Session recovery: tokens and state survive bot restarts
+- ✅ Fallback to in-memory mode if persistence fails
 
 ### v1.3.0 (October 2025) - Phase 3: Service Layer Refinement
 - ✅ Added `OutlookService` for Microsoft Graph API abstraction

@@ -348,7 +348,7 @@ if last_task:
 
 ### TokenManager
 **Module**: `src/utils/token_manager.py`  
-**Purpose**: Manages Microsoft Graph API access tokens
+**Purpose**: Manages Microsoft Graph API access tokens with optional persistence
 
 **Class**: `TokenManager`
 
@@ -356,6 +356,7 @@ if last_task:
 - `set_token(token: str)` → None
   - Stores access token
   - Records timestamp for age tracking
+  - Encrypts and persists to disk if persistence enabled
   
 - `get_token()` → str | None
   - Retrieves stored token
@@ -363,6 +364,7 @@ if last_task:
   
 - `clear_token()` → bool
   - Removes stored token
+  - Clears from both memory and disk
   - Returns True if token was cleared
   
 - `has_token()` → bool
@@ -384,16 +386,33 @@ if last_task:
     }
     ```
 
+- `save_to_disk()` → bool
+  - Manually save encrypted token to disk
+  - Automatically called by auto-save thread
+  - Returns True if saved successfully
+
+- `load_from_disk()` → bool
+  - Load encrypted token from disk on startup
+  - Automatically called if persistence enabled
+  - Returns True if loaded successfully
+
 **Replaces**: Global `outlook_access_token` variable (removed in Phase 3)
 
 **Token Lifecycle**:
 1. User runs `/connectoutlook`
 2. `OutlookService.authenticate()` returns token
-3. `TokenManager.set_token(token)` stores it
-4. Subsequent commands use `TokenManager.get_token()`
-5. Token stored in memory (session-based, cleared on restart)
+3. `TokenManager.set_token(token)` stores and encrypts it
+4. Background thread auto-saves every 5 minutes
+5. Subsequent commands use `TokenManager.get_token()`
+6. Token persisted to disk (survives restarts)
+7. On restart, token automatically loaded from disk
 
-**Future Enhancement**: Token refresh logic when age > 3600 seconds (1 hour)
+**Persistence Features**:
+- **Encryption**: Fernet (AES-128-CBC + HMAC) encryption at rest
+- **Auto-save**: Background thread saves every 5 minutes
+- **Atomic writes**: Temp file + rename prevents corruption
+- **Backup rotation**: Maintains 3 rotating backups
+- **Graceful fallback**: Works in-memory if persistence fails
 
 **Example Usage**:
 ```python
@@ -415,6 +434,214 @@ if token_manager.has_token():
     # ... make API calls
 else:
     print("Please authenticate first")
+
+# Manual save (usually not needed due to auto-save)
+if token_manager.save_to_disk():
+    print("Token saved to disk")
+```
+
+---
+
+### EncryptionManager
+**Module**: `src/utils/encryption.py`  
+**Purpose**: Provides encryption utilities for securing sensitive data at rest
+
+**Class**: `EncryptionManager`
+
+**Methods**:
+- `__init__(key: str)` → None
+  - Initialize with base64-encoded Fernet key
+  - Validates key format
+
+- `encrypt(plaintext: str)` → bytes
+  - Encrypts plaintext string to ciphertext bytes
+  - Returns base64-encoded encrypted data
+  - Uses Fernet (AES-128-CBC + HMAC-SHA256)
+
+- `decrypt(ciphertext: bytes)` → str
+  - Decrypts ciphertext bytes to plaintext string
+  - Raises `InvalidToken` if decryption fails
+  - Validates data integrity via HMAC
+
+- `get_key()` → str
+  - Returns the base64-encoded encryption key
+  - Use for backing up key securely
+
+- `rotate_key(new_key: str, data: bytes)` → bytes
+  - Re-encrypts data with new key
+  - For key rotation without data loss
+  - Returns newly encrypted data
+
+**Static/Class Methods**:
+- `generate_key()` → str
+  - Generates a new random Fernet key
+  - Returns base64-encoded 32-byte key
+  - Use for initial setup
+
+- `create_with_new_key()` → EncryptionManager
+  - Creates manager instance with auto-generated key
+  - For quick setup during development
+
+**Security Features**:
+- **Authenticated Encryption**: HMAC prevents tampering
+- **Key Derivation**: Proper random key generation
+- **Format Validation**: Validates all inputs/outputs
+- **Error Handling**: Clear error messages for debugging
+
+**Example Usage**:
+```python
+from utils.encryption import EncryptionManager
+
+# Option 1: Use existing key
+key = "your_base64_key_here"
+manager = EncryptionManager(key)
+
+# Option 2: Generate new key
+new_key = EncryptionManager.generate_key()
+manager = EncryptionManager(new_key)
+
+# Encrypt sensitive data
+token = "eyJ0eXAiOiJKV1QiLCJub..."
+encrypted = manager.encrypt(token)
+print(f"Encrypted: {encrypted[:50]}...")
+
+# Decrypt data
+decrypted = manager.decrypt(encrypted)
+assert decrypted == token
+
+# Save key for future use
+print(f"Save this key: {manager.get_key()}")
+```
+
+---
+
+### AutoSaveThread
+**Module**: `src/utils/auto_save.py`  
+**Purpose**: Background thread for periodic state persistence
+
+**Class**: `AutoSaveThread` (extends `threading.Thread`)
+
+**Methods**:
+- `__init__(token_manager, state_manager, interval_seconds=300)` → None
+  - Initialize auto-save thread
+  - Default interval: 300 seconds (5 minutes)
+  - Runs as daemon thread
+
+- `run()` → None
+  - Main thread loop
+  - Saves state at configured intervals
+  - Skips unchanged state (hash-based detection)
+  - Handles exceptions gracefully
+
+- `stop()` → None
+  - Signals thread to stop
+  - Performs final save before exit
+  - Waits for thread to finish
+
+- `force_save()` → None
+  - Immediately saves state
+  - Bypasses interval timer
+  - Used during shutdown
+
+**Features**:
+- **Skip Unchanged State**: Uses SHA-256 hash to detect changes
+- **Exception Handling**: Prevents thread crashes
+- **Graceful Shutdown**: Saves on SIGTERM/SIGINT
+- **Comprehensive Logging**: Timestamps and save results
+
+**Example Usage**:
+```python
+from utils.auto_save import AutoSaveThread
+from utils import TokenManager, UserStateManager
+
+# Initialize managers
+token_manager = TokenManager()
+state_manager = UserStateManager()
+
+# Start auto-save thread (5 minute interval)
+auto_save = AutoSaveThread(
+    token_manager=token_manager,
+    state_manager=state_manager,
+    interval_seconds=300
+)
+auto_save.start()
+
+# ... bot runs ...
+
+# Graceful shutdown
+auto_save.stop()  # Performs final save
+```
+
+---
+
+### File Operations Module
+**Module**: `src/utils/file_operations.py`  
+**Purpose**: Secure file operation utilities for state persistence
+
+**Functions**:
+
+#### atomic_write()
+```python
+atomic_write(filepath: str, content: str, encoding: str = 'utf-8') → bool
+```
+- Writes content to file atomically using temp file + rename
+- Prevents corruption from interrupted writes
+- Returns True if write succeeded
+
+#### set_secure_permissions()
+```python
+set_secure_permissions(filepath: str) → bool
+```
+- Sets restrictive file permissions (0600 on Unix, user-only ACL on Windows)
+- Prevents unauthorized access to encrypted data
+- Returns True if permissions set successfully
+
+#### rotate_backups()
+```python
+rotate_backups(filepath: str, max_backups: int = 3) → bool
+```
+- Rotates backup files maintaining retention limit
+- Format: `filename.backup.YYYYMMDD_HHMMSS`
+- Deletes oldest backups when limit exceeded
+- Returns True if rotation succeeded
+
+#### safe_json_load()
+```python
+safe_json_load(filepath: str) → dict | None
+```
+- Loads JSON file with comprehensive error handling
+- Returns None if file doesn't exist or is invalid
+- Logs errors for debugging
+
+#### safe_json_save()
+```python
+safe_json_save(filepath: str, data: dict) → bool
+```
+- Saves JSON file with atomic write
+- Creates parent directories if needed
+- Sets secure permissions automatically
+- Returns True if save succeeded
+
+**Example Usage**:
+```python
+from utils.file_operations import (
+    atomic_write, safe_json_save, safe_json_load,
+    set_secure_permissions, rotate_backups
+)
+
+# Atomic write for critical files
+success = atomic_write("data/tokens.enc", encrypted_data)
+
+# JSON operations with error handling
+state = {"user_123": {"task": "example"}}
+safe_json_save("data/state.json", state)
+loaded = safe_json_load("data/state.json")
+
+# Backup rotation
+rotate_backups("data/tokens.enc", max_backups=3)
+
+# Secure permissions
+set_secure_permissions("data/tokens.enc")
 ```
 
 ---
@@ -593,13 +820,14 @@ External APIs
 
 ## Version History
 
-- **v1.0.0** (Oct 2025): Initial release with basic task creation
-- **v1.1.0** (Oct 2025): Phase 1 - Configuration, Lock Manager, Validators
-- **v1.2.0** (Oct 2025): Phase 2 - LLM Service, Handlers, Formatters
-- **v1.3.0** (Oct 2025): Phase 3 - Service Layer Refinement (OutlookService, StateManager, TokenManager)
+- **v1.0.0** (October 2025): Initial release with basic task creation
+- **v1.1.0** (October 2025): Phase 1 - Configuration, Lock Manager, Validators
+- **v1.2.0** (October 2025): Phase 2 - LLM Service, Handlers, Formatters
+- **v1.3.0** (October 2025): Phase 3 - Service Layer Refinement (OutlookService, StateManager, TokenManager)
+- **v1.4.0** (November 2025): Phase 4 - Persistent State Management (Encryption, Auto-Save, File Operations)
 
-**Current Version**: v1.3.0  
-**Last Updated**: October 3, 2025  
+**Current Version**: v1.4.0  
+**Last Updated**: November 20, 2025  
 **Status**: Production-Ready ✅
 
 ---

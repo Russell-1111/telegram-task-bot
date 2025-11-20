@@ -20,12 +20,17 @@ This document provides real-world examples of how to use the service layer, hand
 3. [Handler Examples](#handler-examples)
    - [Command Handlers](#command-handlers)
    - [Message Handlers](#message-handlers)
-4. [Testing Examples](#testing-examples)
+4. [Persistence Layer Examples](#persistence-layer-examples)
+   - [EncryptionManager](#encryptionmanager)
+   - [AutoSaveThread](#autosavethread)
+   - [File Operations](#file-operations)
+   - [Complete Persistence Setup](#complete-persistence-setup)
+5. [Testing Examples](#testing-examples)
    - [Unit Testing](#unit-testing)
    - [Mocking Patterns](#mocking-patterns)
    - [Integration Testing](#integration-testing)
-5. [Error Handling Patterns](#error-handling-patterns)
-6. [Common Recipes](#common-recipes)
+6. [Error Handling Patterns](#error-handling-patterns)
+7. [Common Recipes](#common-recipes)
 
 ---
 
@@ -1542,31 +1547,383 @@ def get_task_statistics(access_token: str) -> dict:
 
 ---
 
+## Persistence Layer Examples
+
+### EncryptionManager
+
+The `EncryptionManager` provides Fernet-based encryption for secure token storage.
+
+#### Example 1: Basic Encryption Setup
+
+```python
+from utils.encryption import EncryptionManager
+
+# Option 1: Generate new key for first-time setup
+key = EncryptionManager.generate_key()
+print(f"Generated key (save this!): {key}")
+
+manager = EncryptionManager(key)
+
+# Encrypt sensitive data
+access_token = "eyJ0eXAiOiJKV1QiLCJub25jZSI6..."
+encrypted_token = manager.encrypt(access_token)
+print(f"Encrypted length: {len(encrypted_token)} bytes")
+
+# Decrypt when needed
+decrypted_token = manager.decrypt(encrypted_token)
+assert decrypted_token == access_token
+print("✅ Encryption/decryption successful!")
+```
+
+#### Example 2: Key Management for Production
+
+```python
+import os
+from utils.encryption import EncryptionManager
+
+def get_encryption_manager():
+    """Get encryption manager with key from environment."""
+    encryption_key = os.getenv("STATE_ENCRYPTION_KEY")
+    
+    if not encryption_key:
+        # Auto-generate for first run
+        manager = EncryptionManager.create_with_new_key()
+        print("="*60)
+        print("AUTO-GENERATED ENCRYPTION KEY")
+        print(f"Key: {manager.get_key()}")
+        print("IMPORTANT: Set STATE_ENCRYPTION_KEY environment variable")
+        print("to preserve this key across restarts!")
+        print("="*60)
+        return manager
+    
+    # Use existing key
+    return EncryptionManager(encryption_key)
+
+# Usage in bot startup
+manager = get_encryption_manager()
+
+# Save key to .env for production
+# STATE_ENCRYPTION_KEY=<key_from_above>
+```
+
+#### Example 3: Key Rotation
+
+```python
+from utils.encryption import EncryptionManager
+
+def rotate_encryption_key(old_key: str, new_key: str, encrypted_data: bytes):
+    """Rotate encryption key for existing data."""
+    # Decrypt with old key
+    old_manager = EncryptionManager(old_key)
+    plaintext = old_manager.decrypt(encrypted_data)
+    
+    # Re-encrypt with new key
+    new_manager = EncryptionManager(new_key)
+    new_encrypted = new_manager.encrypt(plaintext)
+    
+    print(f"✅ Key rotated successfully")
+    print(f"Old encrypted size: {len(encrypted_data)}")
+    print(f"New encrypted size: {len(new_encrypted)}")
+    
+    return new_encrypted
+
+# Example usage
+old_key = "old_base64_key_here"
+new_key = EncryptionManager.generate_key()
+encrypted_token = b"..." # existing encrypted data
+
+rotated = rotate_encryption_key(old_key, new_key, encrypted_token)
+```
+
+---
+
+### AutoSaveThread
+
+The `AutoSaveThread` provides background auto-save functionality for state persistence.
+
+#### Example 1: Basic Auto-Save Setup
+
+```python
+from utils.auto_save import AutoSaveThread
+from utils import TokenManager, UserStateManager
+
+# Initialize managers
+token_manager = TokenManager()
+state_manager = UserStateManager()
+
+# Start auto-save thread (5 minute interval)
+auto_save = AutoSaveThread(
+    token_manager=token_manager,
+    state_manager=state_manager,
+    interval_seconds=300  # 5 minutes
+)
+auto_save.start()
+print("✅ Auto-save thread started (5 min interval)")
+
+# Bot runs normally...
+# State automatically saved every 5 minutes
+
+# Graceful shutdown
+def shutdown():
+    print("Shutting down...")
+    auto_save.stop()  # Performs final save
+    print("✅ Final state saved")
+
+# Register shutdown handler
+import atexit
+atexit.register(shutdown)
+```
+
+#### Example 2: Custom Save Intervals
+
+```python
+from utils.auto_save import AutoSaveThread
+
+def create_auto_save_thread(save_interval_minutes: int = 5):
+    """Create auto-save thread with custom interval."""
+    from utils import TokenManager, UserStateManager
+    from config.settings import config
+    
+    # Get interval from config or parameter
+    interval_seconds = config.auto_save_interval_seconds or (save_interval_minutes * 60)
+    
+    auto_save = AutoSaveThread(
+        token_manager=TokenManager(),
+        state_manager=UserStateManager(),
+        interval_seconds=interval_seconds
+    )
+    
+    print(f"✅ Auto-save configured: {interval_seconds}s interval")
+    return auto_save
+
+# Development: save every 1 minute
+dev_auto_save = create_auto_save_thread(save_interval_minutes=1)
+
+# Production: save every 10 minutes
+prod_auto_save = create_auto_save_thread(save_interval_minutes=10)
+```
+
+#### Example 3: Manual Save Trigger
+
+```python
+from utils.auto_save import AutoSaveThread
+
+# Initialize auto-save thread
+auto_save = AutoSaveThread(token_manager, state_manager, 300)
+auto_save.start()
+
+# Force immediate save when needed
+def on_critical_operation():
+    """Force save after critical operations."""
+    # ... perform critical operation ...
+    
+    # Force immediate save (doesn't wait for interval)
+    auto_save.force_save()
+    print("✅ State saved immediately after critical operation")
+
+# Example: Force save before sensitive operation
+on_critical_operation()
+```
+
+---
+
+### File Operations
+
+Secure file operation utilities for atomic writes and backup management.
+
+#### Example 1: Atomic File Writes
+
+```python
+from utils.file_operations import atomic_write, set_secure_permissions
+import json
+
+def save_critical_data(filepath: str, data: dict):
+    """Save critical data with atomic write and secure permissions."""
+    # Convert to JSON
+    json_content = json.dumps(data, indent=2)
+    
+    # Atomic write (prevents corruption)
+    success = atomic_write(filepath, json_content)
+    
+    if success:
+        # Set secure permissions (0600 Unix, user-only ACL Windows)
+        set_secure_permissions(filepath)
+        print(f"✅ Data saved securely to {filepath}")
+        return True
+    else:
+        print(f"❌ Failed to save data to {filepath}")
+        return False
+
+# Usage
+data = {"user_123": {"token": "encrypted_data", "state": "active"}}
+save_critical_data("data/state.enc", data)
+```
+
+#### Example 2: Backup Rotation
+
+```python
+from utils.file_operations import rotate_backups, safe_json_save
+from datetime import datetime
+
+def save_with_backup(filepath: str, data: dict, max_backups: int = 3):
+    """Save data and maintain rotating backups."""
+    # Create backup of existing file
+    if os.path.exists(filepath):
+        rotate_backups(filepath, max_backups=max_backups)
+    
+    # Save new data
+    success = safe_json_save(filepath, data)
+    
+    if success:
+        print(f"✅ Saved with {max_backups} backup retention")
+        
+        # List available backups
+        backup_dir = os.path.join(os.path.dirname(filepath), "backups")
+        if os.path.exists(backup_dir):
+            backups = sorted(os.listdir(backup_dir))
+            print(f"Available backups: {len(backups)}")
+            for backup in backups[-3:]:  # Show last 3
+                print(f"  - {backup}")
+    
+    return success
+
+# Usage
+state_data = {"users": {...}, "tokens": {...}}
+save_with_backup("data/state.json", state_data, max_backups=5)
+```
+
+#### Example 3: Safe JSON Operations
+
+```python
+from utils.file_operations import safe_json_load, safe_json_save
+
+def update_state_file(filepath: str, user_id: int, updates: dict):
+    """Safely update state file with error handling."""
+    # Load existing state (returns None if not found)
+    state = safe_json_load(filepath) or {}
+    
+    # Update user's state
+    if user_id not in state:
+        state[user_id] = {}
+    
+    state[user_id].update(updates)
+    
+    # Save with atomic write
+    if safe_json_save(filepath, state):
+        print(f"✅ State updated for user {user_id}")
+        return True
+    else:
+        print(f"❌ Failed to update state for user {user_id}")
+        return False
+
+# Usage
+update_state_file(
+    "data/user_state.json",
+    user_id=123456,
+    updates={"last_task": "Buy groceries", "due_date": "2025-11-21"}
+)
+```
+
+---
+
+### Complete Persistence Setup
+
+#### Example: Full Bot Initialization with Persistence
+
+```python
+import os
+import atexit
+from utils import TokenManager, UserStateManager
+from utils.encryption import EncryptionManager
+from utils.auto_save import AutoSaveThread
+from config.settings import config
+
+def initialize_bot_with_persistence():
+    """Complete bot initialization with persistent state."""
+    
+    # 1. Initialize encryption
+    encryption_key = os.getenv("STATE_ENCRYPTION_KEY")
+    if not encryption_key:
+        enc_manager = EncryptionManager.create_with_new_key()
+        print("⚠️ Auto-generated encryption key - save to .env!")
+        print(f"STATE_ENCRYPTION_KEY={enc_manager.get_key()}")
+    else:
+        enc_manager = EncryptionManager(encryption_key)
+        print("✅ Using encryption key from environment")
+    
+    # 2. Initialize managers
+    token_manager = TokenManager()
+    state_manager = UserStateManager()
+    
+    # 3. Load persisted state
+    if config.enable_persistence:
+        print("Loading persisted state...")
+        token_loaded = token_manager.load_from_disk()
+        state_loaded = state_manager.load_from_disk()
+        
+        if token_loaded:
+            print("✅ Token restored from disk")
+        if state_loaded:
+            print("✅ User state restored from disk")
+    
+    # 4. Start auto-save thread
+    auto_save = AutoSaveThread(
+        token_manager=token_manager,
+        state_manager=state_manager,
+        interval_seconds=config.auto_save_interval_seconds
+    )
+    auto_save.start()
+    print(f"✅ Auto-save started ({config.auto_save_interval_seconds}s interval)")
+    
+    # 5. Register shutdown handler
+    def shutdown():
+        print("\nShutting down bot...")
+        auto_save.stop()
+        print("✅ State saved on shutdown")
+    
+    atexit.register(shutdown)
+    
+    return token_manager, state_manager, auto_save
+
+# Use in bot.py
+if __name__ == "__main__":
+    token_manager, state_manager, auto_save = initialize_bot_with_persistence()
+    
+    # Start bot with persistence enabled
+    # ...
+```
+
+---
+
 ## Summary
 
 This examples document demonstrates:
 
 1. **Service Layer**: Complete examples for OutlookService, StateManager, TokenManager, and LLMService
-2. **Integration Patterns**: Real-world workflows showing how services work together
-3. **Handler Examples**: Command and message handlers with proper error handling
-4. **Testing**: Unit tests, mocking patterns, and integration tests
-5. **Error Handling**: Graceful degradation and retry logic
-6. **Common Recipes**: Practical solutions for batch operations, reminders, and statistics
+2. **Persistence Layer**: Encryption, auto-save, and file operations for secure state management
+3. **Integration Patterns**: Real-world workflows showing how services work together
+4. **Handler Examples**: Command and message handlers with proper error handling
+5. **Testing**: Unit tests, mocking patterns, and integration tests
+6. **Error Handling**: Graceful degradation and retry logic
+7. **Common Recipes**: Practical solutions for batch operations, reminders, and statistics
 
 **Key Principles Demonstrated:**
 - ✅ Clean separation of concerns
 - ✅ Comprehensive error handling
 - ✅ State management best practices
+- ✅ Secure persistent storage
 - ✅ Testable code patterns
 - ✅ User-friendly error messages
 - ✅ Service layer abstraction
+- ✅ Encryption and data security
 
 **Next Steps:**
 - Refer to [API.md](API.md) for detailed API reference
-- See [TESTING-GUIDE.md](../TESTING-GUIDE.md) for testing instructions
-- Check [README.md](../README.md) for project overview
+- See [PERSISTENCE-GUIDE.md](PERSISTENCE-GUIDE.md) for persistence setup
+- Check [TESTING-GUIDE.md](../TESTING-GUIDE.md) for testing instructions
+- Review [README.md](../README.md) for project overview
 
 ---
 
-*Last Updated: October 3, 2025*
-*Architecture Version: Phase 3 Complete*
+*Last Updated: November 20, 2025*
+*Architecture Version: Phase 4 Complete (Persistent State Management)*
