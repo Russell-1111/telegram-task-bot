@@ -358,13 +358,14 @@ class TestTokenManager:
             persistence_enabled=True
         )
         
-        manager.set_token("test_token_12345")
+        user_id = 123456789
+        manager.set_token(user_id, "test_token_12345")
         
         # Should call save
         mock_save.assert_called_once()
         
         # Token should be stored
-        assert manager.get_token() == "test_token_12345"
+        assert manager.get_token(user_id) == "test_token_12345"
     
     def test_set_token_does_not_save_when_persistence_disabled(self):
         """Test set_token does NOT save when persistence disabled."""
@@ -372,13 +373,14 @@ class TestTokenManager:
         
         # Patch _save_to_disk to verify it's not called
         with patch.object(manager, '_save_to_disk') as mock_save:
-            manager.set_token("test_token_12345")
+            user_id = 123456789
+            manager.set_token(user_id, "test_token_12345")
             
             # Should NOT call save
             mock_save.assert_not_called()
         
         # Token should still be in memory
-        assert manager.get_token() == "test_token_12345"
+        assert manager.get_token(user_id) == "test_token_12345"
     
     @patch('src.utils.token_manager.Path')
     def test_load_state_reads_decrypts_and_restores_token(self, mock_path_class):
@@ -413,7 +415,8 @@ class TestTokenManager:
         result = manager.load_state()
         
         assert result is True
-        assert manager.get_token() == token
+        # Version 1.0 format gets migrated with sentinel user_id=-1
+        assert manager.get_token(-1) == token
     
     @patch('src.utils.token_manager.Path')
     def test_load_state_returns_false_for_missing_file(self, mock_path_class):
@@ -432,7 +435,8 @@ class TestTokenManager:
         result = manager.load_state()
         
         assert result is False
-        assert manager.get_token() is None
+        user_id = 123456789
+        assert manager.get_token(user_id) is None
     
     @patch('src.utils.token_manager.Path')
     @patch('src.utils.file_operations.rotate_backups')
@@ -475,7 +479,8 @@ class TestTokenManager:
             token_file_path="data/tokens.enc",
             persistence_enabled=True
         )
-        manager.set_token("test_token")
+        user_id = 123456789
+        manager.set_token(user_id, "test_token")
         
         # Should not raise exception
         result = manager.save_state()
@@ -514,13 +519,16 @@ class TestTokenManager:
         mock_path_class.return_value = mock_filepath
         
         # Create manager and set token
+        user_id = 123456789
         manager1 = TokenManager(
             encryption_manager=real_encryption,
             token_file_path="data/tokens.enc",
             persistence_enabled=True
         )
-        manager1.set_token("test_token")
-        original_timestamp = manager1._token_set_at
+        manager1.set_token(user_id, "test_token")
+        # Get original timestamp from the TokenData
+        original_token_data = manager1._tokens.get(user_id)
+        original_timestamp = original_token_data.set_at if original_token_data else None
         
         # Save
         result = manager1.save_state()
@@ -540,9 +548,10 @@ class TestTokenManager:
         
         # Verify
         assert load_result is True
-        assert manager2.get_token() == "test_token"
-        assert manager2._token_set_at is not None
-        assert manager2._token_set_at.isoformat()[:19] == original_timestamp.isoformat()[:19]
+        assert manager2.get_token(user_id) == "test_token"
+        loaded_token_data = manager2._tokens.get(user_id)
+        assert loaded_token_data is not None
+        assert loaded_token_data.set_at.isoformat()[:19] == original_timestamp.isoformat()[:19]
 
 
 # ============================================================================
@@ -927,12 +936,13 @@ class TestIntegrationAndEdgeCases:
         mock_path_class.return_value = mock_filepath
         
         # Step 1: Create manager and set token
+        user_id = 123456789
         manager1 = TokenManager(
             encryption_manager=real_encryption,
             token_file_path="data/tokens.enc",
             persistence_enabled=True
         )
-        manager1.set_token("lifecycle_test_token_12345")
+        manager1.set_token(user_id, "lifecycle_test_token_12345")
         
         # Step 2: Save
         result = manager1.save_state()
@@ -952,7 +962,7 @@ class TestIntegrationAndEdgeCases:
         
         # Step 4: Verify
         assert load_result is True
-        assert manager2.get_token() == "lifecycle_test_token_12345"
+        assert manager2.get_token(user_id) == "lifecycle_test_token_12345"
     
     @patch('src.utils.auto_save.time.sleep')
     def test_concurrent_autosave_and_manual_saves(self, mock_sleep):

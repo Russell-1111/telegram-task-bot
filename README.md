@@ -7,6 +7,8 @@ An intelligent Telegram bot that integrates with Microsoft Outlook to manage tas
 - **🧠 AI-Powered Intent Detection**: Uses Google Gemini AI to understand user requests
 - **📅 Task Management**: Create, view, and update tasks in Microsoft Outlook
 - **📋 Task Viewing**: Display uncompleted tasks with `/mytasks` command (Phase 2)
+- **👥 Multi-User Support**: Independent token storage and session management for multiple concurrent users
+- **⚡ Async Architecture**: Non-blocking I/O operations for improved responsiveness and scalability
 - **🇲🇾 Malaysia Timezone Support**: All dates handled in Asia/Kuala_Lumpur timezone (UTC+8)
 - **📝 Smart Summary Validation**: Enforces 3-12 word task summaries with auto-fallback
 - **🔄 Due Date Updates**: Modify task due dates with natural language
@@ -15,6 +17,7 @@ An intelligent Telegram bot that integrates with Microsoft Outlook to manage tas
 - **⏱️ Rate Limiting**: 1 request/minute for `/mytasks` to prevent API spam
 - **💪 Motivational Messages**: Dynamic encouragement based on task count and overdue status
 - **📊 Version Control**: Git integration with helper scripts
+- **🔐 Secure Token Storage**: Encrypted multi-user token persistence with automatic migration
 
 ## 🚀 Quick Start
 

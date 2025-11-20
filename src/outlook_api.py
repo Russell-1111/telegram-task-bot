@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # You obtained this from your Azure App Registration (Step 1)
 CLIENT_ID = "eb71fb44-f2dd-4e1b-9d36-0422e092058b" 
 # For personal Microsoft accounts, use "common"
-AUTHORITY = "https://login.microsoftonline.com/3f639a9b-27c8-4403-82b1-ebfb88052d15" 
+AUTHORITY = "https://login.microsoftonline.com/common" 
 # Define the permissions your app needs
 # User.Read is generally good to have, Tasks.ReadWrite is for tasks
 SCOPES = ["User.Read", "Tasks.ReadWrite"] 

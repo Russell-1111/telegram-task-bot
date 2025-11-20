@@ -5,17 +5,20 @@ This module provides a clean service layer for Microsoft Outlook Tasks integrati
 via Microsoft Graph API. It wraps the outlook_api module functions in a class-based
 architecture for better testability and separation of concerns.
 
+All methods are async to support non-blocking I/O operations.
+
 Classes:
     OutlookService: Service class for managing Outlook tasks via Microsoft Graph API
 
 Usage:
     outlook_service = OutlookService()
-    token = outlook_service.authenticate()
-    task = outlook_service.create_task(token, "Buy groceries", "2025-02-01T17:00:00.0000000")
-    tasks = outlook_service.get_uncompleted_tasks(token, max_tasks=10)
+    token = await outlook_service.authenticate()
+    task = await outlook_service.create_task(token, "Buy groceries", "2025-02-01T17:00:00.0000000")
+    tasks = await outlook_service.get_uncompleted_tasks(token, max_tasks=10)
 """
 
 import logging
+import asyncio
 from typing import Optional, List, Dict, Any
 
 # Import the underlying outlook_api module functions
@@ -35,22 +38,25 @@ logger = logging.getLogger(__name__)
 
 class OutlookService:
     """
-    Service class for Microsoft Outlook Tasks integration.
+    Service class for Microsoft Outlook Tasks integration with async I/O support.
     
     This class provides a clean interface to Microsoft Graph API for managing
     Outlook tasks. It wraps the outlook_api module functions with additional
-    error handling, logging, and a consistent interface.
+    error handling, logging, and non-blocking I/O patterns.
+    
+    All methods are async and use asyncio.to_thread to wrap blocking operations
+    for non-blocking execution.
     
     Attributes:
         None (stateless service)
         
     Methods:
-        authenticate(): Initiates device code flow authentication
-        create_task(): Creates a new task in Outlook
-        update_task_due_date(): Updates the due date of an existing task
-        get_uncompleted_tasks(): Retrieves uncompleted tasks
-        get_all_tasks(): Retrieves all tasks from default list
-        delete_task(): Deletes a specific task by ID
+        authenticate(): Initiates device code flow authentication (async)
+        create_task(): Creates a new task in Outlook (async)
+        update_task_due_date(): Updates the due date of an existing task (async)
+        get_uncompleted_tasks(): Retrieves uncompleted tasks (async)
+        get_all_tasks(): Retrieves all tasks from default list (async)
+        delete_task(): Deletes a specific task by ID (async)
     """
     
     def __init__(self):
@@ -62,13 +68,15 @@ class OutlookService:
         """
         logger.info("OutlookService initialized")
     
-    def authenticate(self) -> str:
+    async def authenticate(self) -> str:
         """
-        Initiate device code flow authentication with Microsoft.
+        Initiate device code flow authentication with Microsoft (async).
         
         This method starts the OAuth device code flow, which displays a code
         and URL for the user to visit and authenticate. After successful
         authentication, it returns an access token.
+        
+        This operation is run in a thread pool to avoid blocking the event loop.
         
         Returns:
             str: Microsoft Graph API access token
@@ -79,12 +87,13 @@ class OutlookService:
             
         Example:
             >>> outlook_service = OutlookService()
-            >>> token = outlook_service.authenticate()
+            >>> token = await outlook_service.authenticate()
             >>> print("Authenticated successfully!")
         """
-        logger.info("Starting authentication flow")
+        logger.info("Starting authentication flow (async)")
         try:
-            token = outlook_api.get_auth_token()
+            # Run blocking operation in thread pool
+            token = await asyncio.to_thread(outlook_api.get_auth_token)
             logger.info("Authentication completed successfully")
             return token
         except ValueError as e:
@@ -94,14 +103,14 @@ class OutlookService:
             logger.error(f"Authentication failed: {e}")
             raise
     
-    def create_task(
+    async def create_task(
         self,
         access_token: str,
         task_title: str,
         due_date_iso: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Create a new task in the default Outlook task list.
+        Create a new task in the default Outlook task list (async).
         
         Args:
             access_token (str): Microsoft Graph API access token
@@ -123,17 +132,19 @@ class OutlookService:
             
         Example:
             >>> service = OutlookService()
-            >>> token = service.authenticate()
-            >>> task = service.create_task(
+            >>> token = await service.authenticate()
+            >>> task = await service.create_task(
             ...     token,
             ...     "Buy groceries",
             ...     "2025-02-01T17:00:00.0000000"
             ... )
             >>> print(f"Created task: {task['id']}")
         """
-        logger.info(f"Creating task: '{task_title}' with due date: {due_date_iso}")
+        logger.info(f"Creating task: '{task_title}' with due date: {due_date_iso} (async)")
         try:
-            task_data = outlook_api.create_outlook_task(
+            # Run blocking operation in thread pool
+            task_data = await asyncio.to_thread(
+                outlook_api.create_outlook_task,
                 access_token,
                 task_title,
                 due_date_iso
@@ -144,14 +155,14 @@ class OutlookService:
             logger.error(f"Failed to create task '{task_title}': {e}")
             raise
     
-    def update_task_due_date(
+    async def update_task_due_date(
         self,
         access_token: str,
         task_id: str,
         new_due_date_iso: str
     ) -> Dict[str, Any]:
         """
-        Update the due date of an existing Outlook task.
+        Update the due date of an existing Outlook task (async).
         
         Args:
             access_token (str): Microsoft Graph API access token
@@ -169,16 +180,18 @@ class OutlookService:
             
         Example:
             >>> service = OutlookService()
-            >>> token = service.authenticate()
-            >>> updated_task = service.update_task_due_date(
+            >>> token = await service.authenticate()
+            >>> updated_task = await service.update_task_due_date(
             ...     token,
             ...     "AAMkAG...",
             ...     "2025-02-15T17:00:00.0000000"
             ... )
         """
-        logger.info(f"Updating task {task_id} with new due date: {new_due_date_iso}")
+        logger.info(f"Updating task {task_id} with new due date: {new_due_date_iso} (async)")
         try:
-            updated_task = outlook_api.update_task_due_date(
+            # Run blocking operation in thread pool
+            updated_task = await asyncio.to_thread(
+                outlook_api.update_task_due_date,
                 access_token,
                 task_id,
                 new_due_date_iso
@@ -192,13 +205,13 @@ class OutlookService:
             logger.error(f"Failed to update task {task_id}: {e}")
             raise
     
-    def get_uncompleted_tasks(
+    async def get_uncompleted_tasks(
         self,
         access_token: str,
         max_tasks: int = 10
     ) -> List[Dict[str, Any]]:
         """
-        Retrieve uncompleted tasks from the default Outlook task list.
+        Retrieve uncompleted tasks from the default Outlook task list (async).
         
         This method fetches tasks with status != 'completed', ordered by
         due date (ascending), with tasks without due dates appearing last.
@@ -222,23 +235,28 @@ class OutlookService:
             
         Example:
             >>> service = OutlookService()
-            >>> token = service.authenticate()
-            >>> tasks = service.get_uncompleted_tasks(token, max_tasks=5)
+            >>> token = await service.authenticate()
+            >>> tasks = await service.get_uncompleted_tasks(token, max_tasks=5)
             >>> for task in tasks:
             ...     print(f"{task['title']} - Due: {task.get('dueDateTime')}")
         """
-        logger.info(f"Retrieving up to {max_tasks} uncompleted tasks")
+        logger.info(f"Retrieving up to {max_tasks} uncompleted tasks (async)")
         try:
-            tasks = outlook_api.get_uncompleted_tasks(access_token, max_tasks)
+            # Run blocking operation in thread pool
+            tasks = await asyncio.to_thread(
+                outlook_api.get_uncompleted_tasks,
+                access_token,
+                max_tasks
+            )
             logger.info(f"Retrieved {len(tasks)} uncompleted tasks")
             return tasks
         except Exception as e:
             logger.error(f"Failed to retrieve uncompleted tasks: {e}")
             raise
     
-    def get_all_tasks(self, access_token: str) -> List[Dict[str, Any]]:
+    async def get_all_tasks(self, access_token: str) -> List[Dict[str, Any]]:
         """
-        Retrieve all tasks from the default Outlook task list.
+        Retrieve all tasks from the default Outlook task list (async).
         
         This method fetches all tasks regardless of completion status.
         Note: This may return a large number of tasks. Consider using
@@ -255,22 +273,26 @@ class OutlookService:
             
         Example:
             >>> service = OutlookService()
-            >>> token = service.authenticate()
-            >>> all_tasks = service.get_all_tasks(token)
+            >>> token = await service.authenticate()
+            >>> all_tasks = await service.get_all_tasks(token)
             >>> print(f"Total tasks: {len(all_tasks)}")
         """
-        logger.info("Retrieving all tasks from default list")
+        logger.info("Retrieving all tasks from default list (async)")
         try:
-            tasks = outlook_api.get_all_tasks(access_token)
+            # Run blocking operation in thread pool
+            tasks = await asyncio.to_thread(
+                outlook_api.get_all_tasks,
+                access_token
+            )
             logger.info(f"Retrieved {len(tasks)} total tasks")
             return tasks
         except Exception as e:
             logger.error(f"Failed to retrieve all tasks: {e}")
             raise
     
-    def delete_task(self, access_token: str, task_id: str) -> bool:
+    async def delete_task(self, access_token: str, task_id: str) -> bool:
         """
-        Delete a specific task by its ID.
+        Delete a specific task by its ID (async).
         
         Args:
             access_token (str): Microsoft Graph API access token
@@ -284,13 +306,18 @@ class OutlookService:
             
         Example:
             >>> service = OutlookService()
-            >>> token = service.authenticate()
-            >>> service.delete_task(token, "AAMkAG...")
+            >>> token = await service.authenticate()
+            >>> await service.delete_task(token, "AAMkAG...")
             >>> print("Task deleted successfully")
         """
-        logger.info(f"Deleting task: {task_id}")
+        logger.info(f"Deleting task: {task_id} (async)")
         try:
-            result = outlook_api.delete_task(access_token, task_id)
+            # Run blocking operation in thread pool
+            result = await asyncio.to_thread(
+                outlook_api.delete_task,
+                access_token,
+                task_id
+            )
             logger.info(f"Task {task_id} deleted successfully")
             return result
         except Exception as e:

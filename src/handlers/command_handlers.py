@@ -89,16 +89,17 @@ async def connect_outlook(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     Features:
     - Initiates Microsoft device code flow
-    - Stores access token in TokenManager
+    - Stores access token in TokenManager per user
     - Provides user feedback throughout process
     - Comprehensive error handling and logging
     
     Process:
-    1. Notify user that connection is starting
-    2. Call outlook_service.authenticate() to start device code flow
-    3. User completes authentication in browser
-    4. Store access token in TokenManager for subsequent API calls
-    5. Confirm successful connection
+    1. Extract user ID from Telegram update
+    2. Notify user that connection is starting
+    3. Call outlook_service.authenticate() to start device code flow
+    4. User completes authentication in browser
+    5. Store access token in TokenManager for this specific user
+    6. Confirm successful connection
     
     Args:
         update (Update): Telegram update object
@@ -108,10 +109,8 @@ async def connect_outlook(update: Update, context: ContextTypes.DEFAULT_TYPE):
         None (sends messages via Telegram API)
     
     Technical Note:
-        Uses TokenManager for centralized token storage. In production:
-        - Implement per-user token storage (database, cache)
-        - Add token refresh logic
-        - Handle token expiration gracefully
+        Uses TokenManager with per-user token storage.
+        Each user's token is isolated and managed independently.
     
     Example:
         User: /connectoutlook
@@ -119,20 +118,21 @@ async def connect_outlook(update: Update, context: ContextTypes.DEFAULT_TYPE):
              [User completes auth in browser]
              ✅ Outlook connected successfully! You can now create tasks...
     """
+    user_id = update.effective_user.id
     await update.message.reply_text("Initiating Outlook connection...")
     try:
-        # Call authenticate through the OutlookService
+        # Call authenticate through the OutlookService (async)
         # This starts the device code flow and returns the access token
-        token = outlook_service.authenticate()
-        token_manager.set_token(token)  # Store in TokenManager
+        token = await outlook_service.authenticate()
+        token_manager.set_token(user_id, token)  # Store in TokenManager for this user
         await update.message.reply_text(
             "✅ Outlook connected successfully! You can now create tasks by sending me task descriptions.\n"
             "🇲🇾 All times will be handled in Malaysia timezone (UTC+8)."
         )
-        logger.info("Successfully connected to Outlook")
+        logger.info(f"Successfully connected to Outlook for user {user_id}")
     except Exception as e:
         await update.message.reply_text(f"Failed to connect to Outlook: {e}")
-        logger.error(f"Error in connect_outlook: {e}")
+        logger.error(f"Error in connect_outlook for user {user_id}: {e}")
 
 
 async def my_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -185,7 +185,7 @@ async def my_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"User {user_name} ({user_id}) requested /mytasks")
     
     # Check if user is authenticated
-    if not token_manager.has_token():
+    if not token_manager.has_token(user_id):
         await update.message.reply_text(
             "🔗 **Please connect to Outlook first!**\n"
             "Use the /connectoutlook command to authenticate your account."
@@ -213,10 +213,10 @@ async def my_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Show "typing" indicator while fetching tasks
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
         
-        # Fetch uncompleted tasks from Outlook via OutlookService
+        # Fetch uncompleted tasks from Outlook via OutlookService (async)
         logger.info(f"Fetching uncompleted tasks for user {user_id}")
-        access_token = token_manager.get_token()
-        uncompleted_tasks = outlook_service.get_uncompleted_tasks(access_token, max_tasks=10)
+        access_token = token_manager.get_token(user_id)
+        uncompleted_tasks = await outlook_service.get_uncompleted_tasks(access_token, max_tasks=10)
         
         # Count overdue tasks
         overdue_count = 0
@@ -254,15 +254,29 @@ async def my_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # Module-level function to set the outlook token (for use by message_handlers)
-def set_outlook_token(token):
-    """Set the outlook access token in TokenManager."""
-    token_manager.set_token(token)
+def set_outlook_token(user_id, token):
+    """
+    Set the outlook access token in TokenManager for a specific user.
+    
+    Args:
+        user_id (int): Telegram user ID
+        token (str): Access token
+    """
+    token_manager.set_token(user_id, token)
 
 
 # Module-level function to get the outlook token (for use by message_handlers)
-def get_outlook_token():
-    """Get the outlook access token from TokenManager."""
-    return token_manager.get_token()
+def get_outlook_token(user_id):
+    """
+    Get the outlook access token from TokenManager for a specific user.
+    
+    Args:
+        user_id (int): Telegram user ID
+    
+    Returns:
+        str or None: Access token if available
+    """
+    return token_manager.get_token(user_id)
 
 
 # Module-level function to get the token manager (for use by message_handlers)

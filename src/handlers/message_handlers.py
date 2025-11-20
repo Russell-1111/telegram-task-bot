@@ -39,7 +39,16 @@ state_manager = None
 token_manager = None
 
 def set_managers(token_mgr, state_mgr):
-    """Set the manager instances from bot.py."""
+    """
+    Set the manager instances from bot.py.
+    
+    Note: Handlers must extract user_id from update.effective_user.id
+    and pass it to token_manager methods.
+    
+    Args:
+        token_mgr: TokenManager instance
+        state_mgr: UserStateManager instance
+    """
     global token_manager, state_manager
     token_manager = token_mgr
     state_manager = state_mgr
@@ -189,23 +198,23 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # --- ORCHESTRATION LOGIC ---
         if intent == "create_task" and summary:
             # Create new task
-            if token_manager.has_token():
+            if token_manager.has_token(user_id):
                 try:
                     # Use LLM-extracted due date or fallback to current date
                     due_datetime = format_due_date_for_outlook(processed_due_date)
                     due_date_display = processed_due_date if processed_due_date else "Today (Malaysia time)"
                     
-                    access_token = token_manager.get_token()
-                    task_data = outlook_service.create_task(access_token, summary, due_datetime)
+                    access_token = token_manager.get_token(user_id)
+                    task_data = await outlook_service.create_task(access_token, summary, due_datetime)
                     
                     # Store the created task in StateManager for potential due date updates
                     state_manager.set_user_task(user_id, task_data['id'], summary, processed_due_date)
                     
                     reply_message = f"✅ Task created in Outlook: '{summary}'\n📅 Due: {due_date_display}"
-                    logger.info(f"Successfully created task in Outlook: '{summary}' with due date {due_date_display} (Malaysia timezone)")
+                    logger.info(f"Successfully created task in Outlook for user {user_id}: '{summary}' with due date {due_date_display} (Malaysia timezone)")
                 except Exception as outlook_error:
                     reply_message = f"❌ Failed to create task in Outlook: {outlook_error}"
-                    logger.error(f"Error creating Outlook task: {outlook_error}")
+                    logger.error(f"Error creating Outlook task for user {user_id}: {outlook_error}")
             else:
                 reply_message = "🔗 I need to connect to your Outlook first! Please use the /connectoutlook command."
                 
@@ -214,15 +223,15 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             last_task = state_manager.get_user_task(user_id)
             if not last_task:
                 reply_message = "❌ No recent task found to update. Create a task first, then I can help you change its due date."
-            elif not token_manager.has_token():
+            elif not token_manager.has_token(user_id):
                 reply_message = "🔗 I need to connect to your Outlook first! Please use the /connectoutlook command."
             else:
                 try:
                     # Update the existing task's due date
                     due_datetime = format_due_date_for_outlook(processed_due_date)
                     
-                    access_token = token_manager.get_token()
-                    updated_task = outlook_service.update_task_due_date(access_token, last_task['id'], due_datetime)
+                    access_token = token_manager.get_token(user_id)
+                    updated_task = await outlook_service.update_task_due_date(access_token, last_task['id'], due_datetime)
                     
                     # Update our stored task info in StateManager
                     state_manager.set_user_task(user_id, last_task['id'], last_task['title'], processed_due_date)
@@ -231,7 +240,7 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     logger.info(f"Successfully updated task due date for user {user_id}: '{last_task['title']}' -> {processed_due_date}")
                 except Exception as outlook_error:
                     reply_message = f"❌ Failed to update task due date: {outlook_error}"
-                    logger.error(f"Error updating task due date: {outlook_error}")
+                    logger.error(f"Error updating task due date for user {user_id}: {outlook_error}")
                     
         else:
             # Handle other cases
